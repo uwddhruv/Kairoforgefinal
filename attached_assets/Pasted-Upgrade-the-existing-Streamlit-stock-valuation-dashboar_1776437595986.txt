@@ -1,0 +1,73 @@
+Upgrade the existing Streamlit stock valuation dashboard into a production-grade financial analytics system with intelligent screening, automation, and portfolio insights.
+
+New Advanced Features:
+
+1. Automated Stock Screener Intelligence Layer
+- Extend the Nifty 500 screener to generate a ranked “Value Opportunity Score” using:
+  - Graham Margin of Safety
+  - DCF Margin of Safety
+  - ROE quality filter
+  - Debt-to-Equity penalty (if available)
+- Normalize all metrics into a unified scoring system (0–100).
+- Output final ranked list of top 10 “best value stocks”.
+
+2. Investment Signal Engine
+- For each stock, generate a final signal:
+  - STRONG BUY / BUY / HOLD / AVOID
+- Base this on combined:
+  - Graham valuation
+  - DCF valuation
+  - Financial ratios quality (ROE, ROIC, P/E deviation)
+- Clearly explain reasoning in a short text block per stock.
+
+3. Portfolio Simulation Module
+- Allow user to select up to 10 stocks from screener.
+- Create a hypothetical equal-weight portfolio.
+- Compute:
+  - Average valuation score
+  - Average margin of safety
+  - Risk flag (high/medium/low based on volatility proxy or beta if available)
+
+4. Data Quality Scoring System
+- Assign a “Data Reliability Score” to each stock based on:
+  - Availability of EPS, FCF, BVPS, ROE, ROIC
+- Penalize missing or inconsistent data.
+
+5. Performance Optimization Upgrade
+- Implement:
+  - Parallel processing (batch stock evaluation)
+  - Aggressive Streamlit caching for API responses
+- Ensure screener can scale to 500 stocks efficiently.
+
+6. Dashboard UX Upgrade
+- Add 3 main tabs:
+  - 📊 Screener (Nifty 500 ranking)
+  - 📈 Stock Deep Analysis
+  - 💼 Portfolio Builder
+- Add color-coded signals (green = buy, red = avoid, yellow = hold)
+
+7. Explainability Layer (Important)
+- For every stock, show:
+  - Why it is undervalued/overvalued
+  - Which metric drove the decision most (DCF / Graham / Ratios)
+- Keep explanations short and investor-friendly.
+
+8. Export Feature
+- Allow export of:
+  - Screener results to CSV
+  - Portfolio summary report as PDF
+
+Engineering Requirements:
+9. Refactor architecture into modular components:
+   - data_loader.py
+   - valuation_models.py
+   - screener.py
+   - portfolio.py
+   - ui.py
+10. Ensure clean separation between:
+   - data fetching
+   - computation
+   - UI rendering
+
+Final Goal:
+Transform this project into a semi-professional equity research platform that simulates institutional-style stock screening, valuation, and portfolio construction workflows suitable for analyst or internship roles.
