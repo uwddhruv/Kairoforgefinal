@@ -29,8 +29,8 @@ from portfolio import build_portfolio, compute_portfolio_metrics, portfolio_to_c
 # PAGE CONFIG  (must be first Streamlit call)
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Equity Research Dashboard",
-    page_icon="📊",
+    page_title="ALPHAFORGE",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -189,7 +189,8 @@ if "analysis_ticker" not in st.session_state: st.session_state.analysis_ticker =
 # ─────────────────────────────────────────────────────────────────────────────
 # HEADER
 # ─────────────────────────────────────────────────────────────────────────────
-st.markdown("## 📊 Equity Research Dashboard — Indian Markets (NSE)")
+st.markdown("# ⚡ ALPHAFORGE")
+st.markdown("### Institutional-Grade Equity Research — Indian Markets (NSE)")
 st.caption(
     "Value Screening · Graham Number · 3-Stage DCF · Ratio Analysis · Portfolio Simulation  "
     "| Data: Yahoo Finance via yfinance"
