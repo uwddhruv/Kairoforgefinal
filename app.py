@@ -757,10 +757,13 @@ with tab4:
         )
 
         st.markdown("**Sensitivity Table (₹ per share)**")
-        styled = sensitivity_df.style.format("₹{:,.0f}", na_rep="—").background_gradient(
-            cmap="RdYlGn", axis=None, vmin=price * 0.5, vmax=price * 1.5
-        )
-        st.dataframe(styled, use_container_width=True)
+        # Format each cell as currency (column-wise apply avoids deprecated applymap)
+        formatted_df = sensitivity_df.copy()
+        for col in formatted_df.columns:
+            formatted_df[col] = formatted_df[col].apply(
+                lambda v: f"₹{v:,.0f}" if pd.notna(v) else "—"
+            )
+        st.dataframe(formatted_df, use_container_width=True)
 
         st.caption(
             f"Assumptions held constant — Stage 1 growth: {g1_pct}%,  "
