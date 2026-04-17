@@ -189,12 +189,22 @@ if "analysis_ticker" not in st.session_state: st.session_state.analysis_ticker =
 # ─────────────────────────────────────────────────────────────────────────────
 # HEADER
 # ─────────────────────────────────────────────────────────────────────────────
-st.markdown("# ⚡ ALPHAFORGE")
-st.markdown("### Institutional-Grade Equity Research — Indian Markets (NSE)")
-st.caption(
-    "Value Screening · Graham Number · 3-Stage DCF · Ratio Analysis · Portfolio Simulation  "
-    "| Data: Yahoo Finance via yfinance"
-)
+logo_col, title_col = st.columns([1, 4])
+with logo_col:
+    st.image("logo.jpg", width=140)
+with title_col:
+    st.markdown("<div style='padding-top:18px'>", unsafe_allow_html=True)
+    st.markdown("# ALPHAFORGE")
+    st.markdown(
+        "<span style='color:#94a3b8;font-size:1rem'>"
+        "Institutional-Grade Equity Research — Indian Markets (NSE)</span>",
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Value Screening · Graham Number · 3-Stage DCF · Ratio Analysis · Portfolio Simulation  "
+        "| Data: Yahoo Finance via yfinance"
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
 st.divider()
 
 
