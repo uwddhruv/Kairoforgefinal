@@ -1,18 +1,16 @@
 """
-app.py
-------
-Production-grade Indian Stock Valuation & Screening Dashboard.
+app.py — KAIROFORGE
+Institutional-Grade Equity Research Terminal for Indian Markets (NSE).
 
-Tabs
-----
-📊 Screener        — Parallel Nifty stock screener, ranked by Value Opportunity Score
-📈 Deep Analysis   — Graham + DCF + Sensitivity + Ratio analysis for a single stock
-💼 Portfolio       — Build a hypothetical equal-weight portfolio from screener picks
+Navigation (sidebar):
+  📊 Screener       — Ranked stock screener with live Value Opportunity Scores
+  📈 Stock Analysis — Graham Number · 3-Stage DCF · Ratios · Sensitivity
+  💼 Portfolio      — Equal-weight portfolio builder with risk metrics
 """
 
 import math
-import streamlit as st
 import pandas as pd
+import streamlit as st
 import plotly.graph_objects as go
 
 from stocks           import STOCKS, SORTED_LABELS
@@ -21,161 +19,228 @@ from valuation_models import (
     calculate_graham, calculate_ratios,
     estimate_wacc, calculate_dcf, run_sensitivity,
 )
-from screener  import run_screener, generate_signal
+from screener  import run_screener, generate_signal, score_stock as _score_stock
 from portfolio import build_portfolio, compute_portfolio_metrics, portfolio_to_csv, screener_to_csv
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PAGE CONFIG  (must be first Streamlit call)
+# PAGE CONFIG
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="KAIROFORGE",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
+
 # ─────────────────────────────────────────────────────────────────────────────
-# MINIMAL GLOBAL STYLE
+# CSS — dark financial terminal theme
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-[data-testid="metric-container"]{
-    background:#f8fafc;border:1px solid #e2e8f0;
-    border-radius:10px;padding:12px 16px;
+
+/* ── Global font & background ─────────────────────────────── */
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif !important;
 }
-.sig-strong-buy{color:#fff;background:#16a34a;padding:3px 10px;border-radius:20px;font-weight:700;font-size:.85rem}
-.sig-buy       {color:#fff;background:#4ade80;padding:3px 10px;border-radius:20px;font-weight:700;font-size:.85rem;color:#14532d}
-.sig-hold      {color:#fff;background:#ca8a04;padding:3px 10px;border-radius:20px;font-weight:700;font-size:.85rem}
-.sig-avoid     {color:#fff;background:#dc2626;padding:3px 10px;border-radius:20px;font-weight:700;font-size:.85rem}
+.stApp {
+    background: linear-gradient(160deg, #080d1a 0%, #0a1020 55%, #06101e 100%) !important;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background: rgba(6, 12, 26, 0.97) !important;
+    border-right: 1px solid rgba(59,130,246,0.18) !important;
+}
+[data-testid="stSidebar"] .stRadio label {
+    color: #94a3b8 !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    padding: 6px 0 !important;
+    transition: color .2s;
+}
+[data-testid="stSidebar"] .stRadio label:hover { color: #e2e8f0 !important; }
+
+/* ── Headings ─────────────────────────────────────────────── */
+h1 {
+    font-weight: 800 !important;
+    background: linear-gradient(135deg, #ffffff 0%, #93c5fd 100%);
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    background-clip: text !important;
+    letter-spacing: -0.02em !important;
+}
+h2, h3 { color: #e2e8f0 !important; font-weight: 700 !important; }
+h4      { color: #cbd5e1 !important; font-weight: 600 !important; }
+
+/* ── Metric cards ─────────────────────────────────────────── */
+[data-testid="metric-container"] {
+    background: rgba(15, 23, 42, 0.85) !important;
+    border: 1px solid rgba(59,130,246,0.2) !important;
+    border-radius: 12px !important;
+    padding: 14px 18px !important;
+    backdrop-filter: blur(12px) !important;
+}
+[data-testid="metric-container"] label {
+    color: #64748b !important;
+    font-size: 0.78rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.06em !important;
+    font-weight: 600 !important;
+}
+[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    color: #f1f5f9 !important;
+    font-size: 1.4rem !important;
+    font-weight: 700 !important;
+}
+
+/* ── Buttons ──────────────────────────────────────────────── */
+.stButton > button {
+    background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%) !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-family: 'Inter', sans-serif !important;
+    letter-spacing: 0.01em !important;
+    transition: all .2s !important;
+}
+.stButton > button:hover {
+    background: linear-gradient(135deg, #2563eb 0%, #60a5fa 100%) !important;
+    box-shadow: 0 6px 20px rgba(59,130,246,0.45) !important;
+    transform: translateY(-1px) !important;
+}
+button[kind="secondary"] {
+    background: rgba(30,41,59,0.8) !important;
+    border: 1px solid rgba(59,130,246,0.3) !important;
+    color: #93c5fd !important;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────── */
+.stTabs [data-baseweb="tab-list"] {
+    background: rgba(15,23,42,0.8) !important;
+    border-radius: 10px !important;
+    padding: 4px !important;
+    gap: 2px !important;
+    border: 1px solid rgba(59,130,246,0.12) !important;
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 7px !important;
+    color: #64748b !important;
+    font-weight: 500 !important;
+    padding: 6px 16px !important;
+}
+.stTabs [aria-selected="true"] {
+    background: linear-gradient(135deg, #1d4ed8, #3b82f6) !important;
+    color: #fff !important;
+    font-weight: 600 !important;
+}
+
+/* ── Inputs / Selectbox ───────────────────────────────────── */
+.stTextInput input, .stNumberInput input {
+    background: rgba(15,23,42,0.9) !important;
+    color: #e2e8f0 !important;
+    border: 1px solid rgba(59,130,246,0.3) !important;
+    border-radius: 8px !important;
+}
+.stSelectbox > div > div {
+    background: rgba(15,23,42,0.9) !important;
+    border: 1px solid rgba(59,130,246,0.3) !important;
+    border-radius: 8px !important;
+    color: #e2e8f0 !important;
+}
+.stMultiSelect > div > div {
+    background: rgba(15,23,42,0.9) !important;
+    border: 1px solid rgba(59,130,246,0.3) !important;
+    border-radius: 8px !important;
+}
+
+/* ── Expanders ────────────────────────────────────────────── */
+[data-testid="stExpander"] {
+    background: rgba(15,23,42,0.7) !important;
+    border: 1px solid rgba(59,130,246,0.15) !important;
+    border-radius: 10px !important;
+}
+[data-testid="stExpander"] summary { color: #93c5fd !important; font-weight: 500 !important; }
+
+/* ── Progress bar ─────────────────────────────────────────── */
+.stProgress > div > div > div > div {
+    background: linear-gradient(90deg, #1d4ed8, #06b6d4) !important;
+    border-radius: 4px !important;
+}
+
+/* ── Alerts ───────────────────────────────────────────────── */
+.stSuccess { background: rgba(22,163,74,0.1) !important; border: 1px solid rgba(22,163,74,0.3) !important; border-radius: 10px !important; color: #4ade80 !important; }
+.stError   { background: rgba(220,38,38,0.1) !important; border: 1px solid rgba(220,38,38,0.3) !important; border-radius: 10px !important; }
+.stWarning { background: rgba(202,138,4,0.1) !important; border: 1px solid rgba(202,138,4,0.3) !important; border-radius: 10px !important; }
+.stInfo    { background: rgba(59,130,246,0.1) !important; border: 1px solid rgba(59,130,246,0.3) !important; border-radius: 10px !important; color: #93c5fd !important; }
+
+/* ── Divider ──────────────────────────────────────────────── */
+hr { border-color: rgba(59,130,246,0.15) !important; }
+
+/* ── Glass card ───────────────────────────────────────────── */
+.glass-card {
+    background: rgba(15,23,42,0.7);
+    border: 1px solid rgba(59,130,246,0.18);
+    border-radius: 14px;
+    padding: 20px 24px;
+    backdrop-filter: blur(12px);
+    margin-bottom: 12px;
+}
+
+/* ── Hero card ────────────────────────────────────────────── */
+.hero-card {
+    background: linear-gradient(135deg, rgba(29,78,216,0.15) 0%, rgba(15,23,42,0.9) 100%);
+    border: 1px solid rgba(59,130,246,0.3);
+    border-radius: 16px;
+    padding: 24px 28px;
+    backdrop-filter: blur(16px);
+    margin-bottom: 20px;
+}
+
+/* ── Screener table ───────────────────────────────────────── */
+.scr-wrap { overflow-x:auto; border-radius:12px; border:1px solid rgba(59,130,246,0.15); margin-top:8px; }
+.scr-table { width:100%; border-collapse:collapse; font-size:.875rem; }
+.scr-table thead tr { background:rgba(7,12,26,0.95); }
+.scr-table th {
+    padding:10px 14px; text-align:left; color:#475569;
+    text-transform:uppercase; font-size:.7rem; letter-spacing:.07em; font-weight:600;
+    border-bottom:1px solid rgba(59,130,246,0.12);
+    white-space:nowrap;
+}
+.scr-table td { padding:9px 14px; border-bottom:1px solid rgba(30,41,59,0.6); color:#cbd5e1; white-space:nowrap; }
+.scr-table tbody tr { transition:background .15s; }
+.scr-table tbody tr:hover { background:rgba(59,130,246,0.07) !important; }
+
+/* signal badges */
+.badge { padding:3px 10px; border-radius:20px; font-size:.72rem; font-weight:700; display:inline-block; }
+.b-sb  { background:rgba(22,163,74,.2);   color:#4ade80; border:1px solid #16a34a; }
+.b-b   { background:rgba(74,222,128,.12); color:#86efac; border:1px solid rgba(74,222,128,.4); }
+.b-h   { background:rgba(202,138,4,.18);  color:#fbbf24; border:1px solid #ca8a04; }
+.b-av  { background:rgba(220,38,38,.18);  color:#f87171; border:1px solid #dc2626; }
+
+/* ── KPI tile ─────────────────────────────────────────────── */
+.kpi-row { display:flex; gap:12px; flex-wrap:wrap; margin:12px 0; }
+.kpi-tile {
+    flex:1; min-width:130px;
+    background:rgba(15,23,42,0.8);
+    border:1px solid rgba(59,130,246,0.18);
+    border-radius:12px; padding:14px 16px;
+    backdrop-filter:blur(10px);
+}
+.kpi-label { color:#475569; font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; font-weight:600; margin-bottom:4px; }
+.kpi-value { font-size:1.3rem; font-weight:700; color:#f1f5f9; }
+.kpi-help  { color:#334155; font-size:.7rem; margin-top:3px; }
+
+/* ── Scrollbar ────────────────────────────────────────────── */
+::-webkit-scrollbar { width:6px; height:6px; }
+::-webkit-scrollbar-track { background:rgba(15,23,42,.5); }
+::-webkit-scrollbar-thumb { background:rgba(59,130,246,.4); border-radius:4px; }
+
 </style>
 """, unsafe_allow_html=True)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# HELPERS
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _fmt(v, prefix="₹", dec=2):
-    return f"{prefix}{v:,.{dec}f}" if v is not None else "N/A"
-
-def _pct(v, dec=1):
-    return f"{v:+.{dec}f}%" if v is not None else "N/A"
-
-def _signal_badge(signal: str) -> str:
-    cls = {"STRONG BUY": "sig-strong-buy", "BUY": "sig-buy",
-           "HOLD": "sig-hold", "AVOID": "sig-avoid"}.get(signal, "")
-    return f'<span class="{cls}">{signal}</span>'
-
-def make_gauge(current, target, title=""):
-    is_under  = current < target
-    bar_color = "#22c55e" if is_under else "#ef4444"
-    max_r     = max(current, target) * 1.65
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number+delta",
-        value=current,
-        number={"prefix": "₹", "valueformat": ",.0f", "font": {"size": 28}},
-        delta={"reference": target, "prefix": "₹", "valueformat": ",.0f",
-               "increasing": {"color": "#ef4444"}, "decreasing": {"color": "#22c55e"}},
-        title={"text": title, "font": {"size": 13}},
-        gauge={
-            "axis": {"range": [0, max_r], "tickprefix": "₹", "tickformat": ","},
-            "bar":  {"color": bar_color, "thickness": 0.26},
-            "steps": [
-                {"range": [0, target],  "color": "rgba(34,197,94,.12)"},
-                {"range": [target, max_r], "color": "rgba(239,68,68,.12)"},
-            ],
-            "threshold": {"line": {"color": "#1e40af", "width": 3},
-                          "value": target, "thickness": 0.85},
-        },
-    ))
-    fig.update_layout(height=260, margin={"t": 50, "b": 10, "l": 10, "r": 10})
-    return fig
-
-def make_bar_comp(labels, values, colors, title=""):
-    fig = go.Figure()
-    for lbl, val, col in zip(labels, values, colors):
-        fig.add_trace(go.Bar(
-            name=lbl, x=[lbl], y=[val],
-            marker_color=col,
-            text=[f"₹{val:,.0f}"], textposition="outside",
-        ))
-    fig.update_layout(
-        title=title, showlegend=False,
-        yaxis={"tickprefix": "₹", "tickformat": ","},
-        height=300, margin={"t": 50, "b": 20, "l": 10, "r": 10},
-    )
-    return fig
-
-def make_hist_chart(hist, ticker):
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=hist.index, y=hist["Close"],
-        name="Close", line={"color": "#3b82f6", "width": 1.8},
-        fill="tozeroy", fillcolor="rgba(59,130,246,.08)",
-    ))
-    if len(hist) >= 50:
-        fig.add_trace(go.Scatter(x=hist.index, y=hist["Close"].rolling(50).mean(),
-            name="50D SMA", line={"color": "#f59e0b", "width": 1.2, "dash": "dot"}))
-    if len(hist) >= 200:
-        fig.add_trace(go.Scatter(x=hist.index, y=hist["Close"].rolling(200).mean(),
-            name="200D SMA", line={"color": "#8b5cf6", "width": 1.2, "dash": "dash"}))
-    fig.update_layout(
-        title=f"{ticker} — 5-Year Price History",
-        yaxis={"tickprefix": "₹", "tickformat": ","},
-        legend={"orientation": "h", "y": 1.08},
-        height=360, margin={"t": 60, "b": 30, "l": 10, "r": 10}, hovermode="x unified",
-    )
-    return fig
-
-def make_dcf_waterfall(result):
-    fig = go.Figure(go.Waterfall(
-        orientation="v", measure=["relative","relative","relative","total"],
-        x=["Stage 1\nHigh Growth","Stage 2\nTransition","Terminal\nValue","Intrinsic\nValue"],
-        y=[result["pv_stage1"], result["pv_stage2"], result["pv_terminal"], result["intrinsic_value"]],
-        texttemplate="₹%{y:,.0f}", textposition="outside",
-        connector={"line": {"color": "#94a3b8"}},
-        increasing={"marker": {"color": "#22c55e"}},
-        totals={"marker": {"color": "#3b82f6"}},
-    ))
-    fig.update_layout(
-        title="DCF Components (₹/Share)",
-        yaxis={"tickprefix": "₹", "tickformat": ","},
-        height=320, margin={"t": 60, "b": 30, "l": 10, "r": 10}, showlegend=False,
-    )
-    return fig
-
-def make_sensitivity_heatmap(df, current_price):
-    z  = df.values.astype(float)
-    fig = go.Figure(go.Heatmap(
-        z=z, x=list(df.columns), y=list(df.index),
-        colorscale=[[0,"#ef4444"],[0.5,"#fef08a"],[1,"#22c55e"]],
-        zmid=current_price,
-        text=[[f"₹{v:,.0f}" if not math.isnan(v) else "—" for v in row] for row in z],
-        texttemplate="%{text}", textfont={"size": 11},
-        colorbar={"title": "Fair Value", "tickprefix": "₹", "tickformat": ","},
-    ))
-    fig.update_layout(
-        title=f"DCF Sensitivity  |  Current Price ₹{current_price:,.0f}",
-        xaxis_title="Terminal Growth", yaxis_title="WACC",
-        height=400, margin={"t": 60, "b": 40, "l": 80, "r": 20},
-    )
-    return fig
-
-def score_donut(score):
-    color = "#16a34a" if score >= 70 else "#4ade80" if score >= 50 else "#ca8a04" if score >= 30 else "#dc2626"
-    fig = go.Figure(go.Pie(
-        values=[score, 100 - score],
-        hole=0.72,
-        marker_colors=[color, "#f1f5f9"],
-        textinfo="none",
-        hoverinfo="skip",
-    ))
-    fig.add_annotation(text=f"<b>{score}</b>", x=0.5, y=0.5,
-                       font_size=32, showarrow=False)
-    fig.update_layout(showlegend=False, height=180,
-                      margin={"t": 10, "b": 10, "l": 10, "r": 10})
-    return fig
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -187,482 +252,777 @@ if "analysis_ticker" not in st.session_state: st.session_state.analysis_ticker =
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# HEADER
+# SIDEBAR — logo + navigation
 # ─────────────────────────────────────────────────────────────────────────────
-logo_col, title_col = st.columns([1, 4])
-with logo_col:
-    st.image("logo.png", width=140)
-with title_col:
-    st.markdown("<div style='padding-top:18px'>", unsafe_allow_html=True)
-    st.markdown("# KAIROFORGE")
+with st.sidebar:
+    st.image("logo.png", use_container_width=True)
+    st.markdown("<hr style='border:1px solid rgba(59,130,246,0.2);margin:12px 0'>", unsafe_allow_html=True)
+
+    page = st.radio(
+        "Navigation",
+        ["📊  Screener", "📈  Stock Analysis", "💼  Portfolio Builder"],
+        label_visibility="collapsed",
+    )
+
+    st.markdown("<hr style='border:1px solid rgba(59,130,246,0.1);margin:12px 0'>", unsafe_allow_html=True)
+    st.caption("Data: Yahoo Finance · yfinance")
+    st.caption(f"Universe: {len(STOCKS)} NSE stocks")
+
+    # Quick-load indicator
+    if st.session_state.analysis_ticker:
+        st.markdown(
+            f"<div style='background:rgba(29,78,216,.15);border:1px solid rgba(59,130,246,.3);"
+            f"border-radius:8px;padding:8px 12px;font-size:.8rem;color:#93c5fd;margin-top:8px'>"
+            f"📈 Loaded: <strong>{st.session_state.analysis_ticker}</strong></div>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<br>", unsafe_allow_html=True)
     st.markdown(
-        "<span style='color:#94a3b8;font-size:1rem'>"
-        "Institutional-Grade Equity Research — Indian Markets (NSE)</span>",
+        "<div style='color:#334155;font-size:.72rem;text-align:center'>"
+        "KAIROFORGE · Equity Research Terminal</div>",
         unsafe_allow_html=True,
     )
-    st.caption(
-        "Value Screening · Graham Number · 3-Stage DCF · Ratio Analysis · Portfolio Simulation  "
-        "| Data: Yahoo Finance via yfinance"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# UTILITY HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fmt(v, prefix="₹", dec=2):
+    return f"{prefix}{v:,.{dec}f}" if v is not None else "N/A"
+
+def _pct(v, dec=1):
+    return f"{v:+.{dec}f}%" if v is not None else "N/A"
+
+# Plotly base layout for dark charts
+_DARK_LAYOUT = dict(
+    template="plotly_dark",
+    paper_bgcolor="rgba(8,13,26,0)",
+    plot_bgcolor="rgba(8,13,26,0)",
+    font=dict(family="Inter, sans-serif", color="#94a3b8"),
+    margin=dict(t=55, b=25, l=15, r=15),
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CHART FACTORIES  (all dark-themed)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def make_gauge(current, target, title=""):
+    is_under  = current < target
+    bar_color = "#22c55e" if is_under else "#ef4444"
+    max_r     = max(current, target) * 1.65
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number+delta",
+        value=current,
+        number={"prefix": "₹", "valueformat": ",.0f", "font": {"size": 26, "color": "#f1f5f9"}},
+        delta={"reference": target, "prefix": "₹", "valueformat": ",.0f",
+               "increasing": {"color": "#ef4444"}, "decreasing": {"color": "#22c55e"}},
+        title={"text": title, "font": {"size": 12, "color": "#64748b"}},
+        gauge={
+            "axis": {"range": [0, max_r], "tickprefix": "₹", "tickformat": ",", "tickcolor": "#334155"},
+            "bar":  {"color": bar_color, "thickness": 0.26},
+            "bgcolor": "rgba(15,23,42,0.4)",
+            "steps": [
+                {"range": [0, target],  "color": "rgba(34,197,94,.1)"},
+                {"range": [target, max_r], "color": "rgba(239,68,68,.1)"},
+            ],
+            "threshold": {"line": {"color": "#3b82f6", "width": 3},
+                          "value": target, "thickness": 0.85},
+        },
+    ))
+    fig.update_layout(height=255, **_DARK_LAYOUT)
+    return fig
+
+
+def make_bar_comp(labels, values, colors, title=""):
+    fig = go.Figure()
+    for lbl, val, col in zip(labels, values, colors):
+        fig.add_trace(go.Bar(
+            name=lbl, x=[lbl], y=[val],
+            marker_color=col, marker_line_color="rgba(0,0,0,0)",
+            text=[f"₹{val:,.0f}"], textposition="outside",
+            textfont={"color": "#e2e8f0"},
+        ))
+    fig.update_layout(
+        title=dict(text=title, font={"size": 13}),
+        showlegend=False,
+        yaxis={"tickprefix": "₹", "tickformat": ",", "gridcolor": "rgba(59,130,246,0.08)"},
+        height=295, **_DARK_LAYOUT,
     )
-    st.markdown("</div>", unsafe_allow_html=True)
-st.divider()
+    return fig
+
+
+def make_hist_chart(hist, ticker):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=hist.index, y=hist["Close"],
+        name="Close", line={"color": "#3b82f6", "width": 1.8},
+        fill="tozeroy", fillcolor="rgba(59,130,246,0.07)",
+    ))
+    if len(hist) >= 50:
+        fig.add_trace(go.Scatter(x=hist.index, y=hist["Close"].rolling(50).mean(),
+            name="50D SMA", line={"color": "#f59e0b", "width": 1.2, "dash": "dot"}))
+    if len(hist) >= 200:
+        fig.add_trace(go.Scatter(x=hist.index, y=hist["Close"].rolling(200).mean(),
+            name="200D SMA", line={"color": "#8b5cf6", "width": 1.2, "dash": "dash"}))
+    fig.update_layout(
+        title=dict(text=f"{ticker} — 5-Year Price History", font={"size": 13}),
+        yaxis={"tickprefix": "₹", "tickformat": ",", "gridcolor": "rgba(59,130,246,0.08)"},
+        legend={"orientation": "h", "y": 1.08},
+        height=355, hovermode="x unified", **_DARK_LAYOUT,
+    )
+    return fig
+
+
+def make_dcf_waterfall(result):
+    fig = go.Figure(go.Waterfall(
+        orientation="v", measure=["relative","relative","relative","total"],
+        x=["Stage 1\nHigh Growth","Stage 2\nTransition","Terminal\nValue","Intrinsic\nValue"],
+        y=[result["pv_stage1"], result["pv_stage2"], result["pv_terminal"], result["intrinsic_value"]],
+        texttemplate="₹%{y:,.0f}", textposition="outside",
+        textfont={"color": "#e2e8f0"},
+        connector={"line": {"color": "rgba(59,130,246,0.3)"}},
+        increasing={"marker": {"color": "#22c55e"}},
+        totals={"marker": {"color": "#3b82f6"}},
+    ))
+    fig.update_layout(
+        title=dict(text="DCF Components — Present Value Breakdown (₹/Share)", font={"size": 13}),
+        yaxis={"tickprefix": "₹", "tickformat": ",", "gridcolor": "rgba(59,130,246,0.08)"},
+        height=315, showlegend=False, **_DARK_LAYOUT,
+    )
+    return fig
+
+
+def make_sensitivity_heatmap(df, current_price):
+    z  = df.values.astype(float)
+    fig = go.Figure(go.Heatmap(
+        z=z, x=list(df.columns), y=list(df.index),
+        colorscale=[[0,"#7f1d1d"],[0.35,"#dc2626"],[0.5,"#1e3a5f"],[0.65,"#16a34a"],[1,"#166534"]],
+        zmid=current_price,
+        text=[[f"₹{v:,.0f}" if not math.isnan(v) else "—" for v in row] for row in z],
+        texttemplate="%{text}", textfont={"size": 11, "color": "#f1f5f9"},
+        colorbar={"title": "Fair Value (₹)", "tickprefix": "₹", "tickformat": ",",
+                  "tickfont": {"color": "#94a3b8"}},
+    ))
+    fig.update_layout(
+        title=dict(
+            text=f"DCF Sensitivity  |  Current Price ₹{current_price:,.0f}  |  <span style='color:#22c55e'>Green = undervalued</span>",
+            font={"size": 13}
+        ),
+        xaxis_title="Terminal Growth Rate", yaxis_title="WACC",
+        xaxis={"tickfont": {"color": "#94a3b8"}},
+        yaxis={"tickfont": {"color": "#94a3b8"}},
+        height=395, **_DARK_LAYOUT,
+        margin=dict(t=60, b=45, l=80, r=20),
+    )
+    return fig
+
+
+def score_donut(score):
+    color = "#16a34a" if score >= 70 else "#3b82f6" if score >= 50 else "#ca8a04" if score >= 30 else "#dc2626"
+    fig = go.Figure(go.Pie(
+        values=[score, 100 - score], hole=0.72,
+        marker_colors=[color, "rgba(30,41,59,0.6)"],
+        textinfo="none", hoverinfo="skip",
+    ))
+    fig.add_annotation(text=f"<b>{score}</b>", x=0.5, y=0.5,
+                       font={"size": 30, "color": color}, showarrow=False)
+    fig.update_layout(showlegend=False, height=175, **_DARK_LAYOUT,
+                      margin=dict(t=8, b=8, l=8, r=8))
+    return fig
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MAIN TABS
+# CUSTOM HTML COMPONENTS
 # ─────────────────────────────────────────────────────────────────────────────
-tab_screen, tab_analysis, tab_portfolio = st.tabs([
-    "📊  Screener",
-    "📈  Deep Analysis",
-    "💼  Portfolio Builder",
-])
+
+def hero_card(name, ticker, sector, price, signal, emoji, score, explanation):
+    """Render a stock hero card with name, price, signal, and rationale."""
+    sig_colors = {"STRONG BUY": "#22c55e", "BUY": "#4ade80",
+                  "HOLD": "#fbbf24", "AVOID": "#ef4444"}
+    sig_bg = {"STRONG BUY": "rgba(22,163,74,.18)", "BUY": "rgba(74,222,128,.12)",
+              "HOLD": "rgba(202,138,4,.18)", "AVOID": "rgba(220,38,38,.18)"}
+    col = sig_colors.get(signal, "#94a3b8")
+    bg  = sig_bg.get(signal, "rgba(59,130,246,.1)")
+    p   = f"₹{price:,.2f}" if price else "N/A"
+    st.markdown(f"""
+<div class="hero-card">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px">
+    <div>
+      <div style="color:#475569;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">{sector}</div>
+      <div style="font-size:1.75rem;font-weight:800;color:#f1f5f9;line-height:1.1">{name}</div>
+      <div style="color:#475569;font-size:.85rem;margin-top:5px">NSE &nbsp;·&nbsp; <strong style="color:#93c5fd">{ticker}</strong></div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:2.1rem;font-weight:800;color:#f1f5f9;font-variant-numeric:tabular-nums">{p}</div>
+      <div style="margin-top:10px">
+        <span style="background:{bg};color:{col};border:1px solid {col};padding:5px 16px;border-radius:20px;font-weight:700;font-size:.85rem">{emoji} {signal}</span>
+      </div>
+      <div style="color:#475569;font-size:.78rem;margin-top:8px">Value Score &nbsp;<strong style="color:{col}">{score}/100</strong></div>
+    </div>
+  </div>
+  <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(59,130,246,0.12);color:#64748b;font-size:.82rem;line-height:1.5">{explanation[:200]}{"…" if len(explanation)>200 else ""}</div>
+</div>
+""", unsafe_allow_html=True)
+
+
+def kpi_tiles(items: list[dict]):
+    """Render a row of KPI tiles.  items = [{'label','value','help','color'}]"""
+    cols_html = "".join(f"""
+<div class="kpi-tile">
+  <div class="kpi-label">{it['label']}</div>
+  <div class="kpi-value" style="color:{it.get('color','#f1f5f9')}">{it['value']}</div>
+  <div class="kpi-help">{it.get('help','')}</div>
+</div>""" for it in items)
+    st.markdown(f'<div class="kpi-row">{cols_html}</div>', unsafe_allow_html=True)
+
+
+def screener_table(df: pd.DataFrame):
+    """Render a color-coded, terminal-style screener results table."""
+    if df.empty:
+        st.info("No stocks match the current filters.")
+        return
+
+    sig_badge = {
+        "STRONG BUY": '<span class="badge b-sb">STRONG BUY</span>',
+        "BUY":        '<span class="badge b-b">BUY</span>',
+        "HOLD":       '<span class="badge b-h">HOLD</span>',
+        "AVOID":      '<span class="badge b-av">AVOID</span>',
+    }
+    border_col = {
+        "STRONG BUY": "#16a34a", "BUY": "#4ade80", "HOLD": "#ca8a04", "AVOID": "#dc2626"
+    }
+
+    def _cell(col, val, signal):
+        if val is None or (isinstance(val, float) and math.isnan(val)):
+            return '<td style="color:#334155">—</td>'
+        if col == "Signal":
+            return f"<td>{sig_badge.get(val,'')}</td>"
+        if col == "Rank":
+            return f'<td style="color:#475569;font-weight:600">#{int(val)}</td>'
+        if col in ("Price (₹)", "Graham No."):
+            return f'<td style="font-weight:600;color:#e2e8f0">₹{float(val):,.0f}</td>'
+        if col == "Score":
+            clr = border_col.get(signal, "#94a3b8")
+            return f'<td style="color:{clr};font-weight:700">{int(val)}</td>'
+        if col == "MoS %":
+            v = float(val)
+            c = "#22c55e" if v > 0 else "#ef4444"
+            return f'<td style="color:{c};font-weight:600">{v:+.1f}%</td>'
+        if col == "ROE (%)":
+            v = float(val)
+            c = "#22c55e" if v > 15 else "#fbbf24" if v > 0 else "#ef4444"
+            return f'<td style="color:{c}">{v:.1f}%</td>'
+        if col == "P/E":
+            v = float(val)
+            c = "#22c55e" if v <= 15 else "#fbbf24" if v <= 30 else "#ef4444"
+            return f'<td style="color:{c}">{v:.1f}×</td>'
+        return f"<td>{val}</td>"
+
+    display_cols = ["Rank","Company","Ticker","Price (₹)","Graham No.",
+                    "MoS %","ROE (%)","P/E","D/E","Score","Signal"]
+    visible = [c for c in display_cols if c in df.columns]
+
+    header = "".join(f"<th>{c}</th>" for c in visible)
+    rows   = ""
+    for _, row in df.iterrows():
+        sig = row.get("Signal","")
+        bg  = {"STRONG BUY":"rgba(22,163,74,.06)","BUY":"rgba(74,222,128,.04)",
+               "HOLD":"rgba(202,138,4,.05)","AVOID":"rgba(220,38,38,.05)"}.get(sig,"")
+        bl  = border_col.get(sig,"transparent")
+        cells = "".join(_cell(c, row.get(c), sig) for c in visible)
+        rows += f'<tr style="background:{bg};border-left:3px solid {bl}">{cells}</tr>'
+
+    st.markdown(
+        f'<div class="scr-wrap"><table class="scr-table"><thead><tr>{header}</tr></thead>'
+        f'<tbody>{rows}</tbody></table></div>',
+        unsafe_allow_html=True
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PAGE HEADER  (appears on all pages)
+# ─────────────────────────────────────────────────────────────────────────────
+def page_header(title: str, subtitle: str = ""):
+    st.markdown(f"## {title}")
+    if subtitle:
+        st.markdown(f"<span style='color:#475569;font-size:.9rem'>{subtitle}</span>",
+                    unsafe_allow_html=True)
+    st.divider()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# TAB 1 — SCREENER
+# PAGE: SCREENER
 # ═══════════════════════════════════════════════════════════════════════════
-with tab_screen:
-    st.markdown("### Value Screener — Nifty Top Stocks")
+def render_screener():
+    page_header("📊 Value Screener",
+                f"Ranks {len(STOCKS)} NSE companies by fundamental value. Scores combine Graham safety, ROE quality, P/E, and debt levels.")
 
-    # ── Plain-language intro ───────────────────────────────────
-    with st.expander("ℹ️  How does the screener work?", expanded=False):
+    # How it works
+    with st.expander("ℹ️ How does the scoring work?", expanded=False):
         st.markdown("""
-The screener automatically fetches live data for **{n} NSE-listed companies** and
-rates each one on four things every value investor cares about:
-
-| What we check | Why it matters | Max points |
+| What we check | Plain English | Weight |
 |---|---|---|
-| **Price vs Graham Number** | Is the stock cheaper than what Benjamin Graham's formula says it's worth? | 40 |
-| **Return on Equity (ROE)** | Is the company using shareholder money efficiently? | 25 |
-| **P/E Ratio** | Are you paying a fair price relative to earnings? | 20 |
-| **Debt level** | Does the company carry too much debt? | 15 |
+| **Graham Number margin of safety** | Is the stock cheaper than what Graham's formula says it's worth? | 40 pts |
+| **Return on Equity (ROE)** | Is the company earning good returns on shareholder money? | 25 pts |
+| **Price-to-Earnings (P/E)** | Are you paying a fair price relative to earnings? | 20 pts |
+| **Debt level (D/E)** | Is the balance sheet safe? | 15 pts |
 
-The total gives a **Value Score out of 100**.  
-Stocks scoring **70+** get a 🟢 STRONG BUY signal, **50–69** get BUY, **30–49** HOLD, and below 30 AVOID.
-        """.format(n=len(STOCKS)))
+**Score → Signal:** ≥70 = 🟢 STRONG BUY · 50–69 = BUY · 30–49 = HOLD · <30 = 🔴 AVOID
+        """)
 
-    # ── Controls row ──────────────────────────────────────────
-    ctrl1, ctrl2, ctrl3 = st.columns([1.5, 2, 1.5])
+    # Controls
+    ctrl1, ctrl2, ctrl3 = st.columns([1.2, 2.5, 1.3])
     with ctrl1:
         run_btn = st.button("🚀 Run Screener", type="primary", use_container_width=True,
-                            help="Fetches live data for all stocks and scores them. Takes ~20 seconds.")
+                            help="Fetches live data for all stocks — takes ~20 seconds on first run.")
     with ctrl2:
         signal_filter = st.radio(
-            "Which stocks to show",
-            ["All stocks", "Potential buys (BUY or better)", "Best picks only (STRONG BUY)"],
-            horizontal=True,
+            "Show",
+            ["All stocks", "BUY signals or better", "STRONG BUY only"],
+            horizontal=True, label_visibility="collapsed",
         )
     with ctrl3:
-        quality_only = st.checkbox(
-            "Complete data only",
-            value=True,
-            help="Hides stocks where key data like EPS or Book Value is missing, making the score unreliable.",
-        )
+        quality_only = st.checkbox("Complete data only", value=True,
+            help="Hides stocks where EPS or Book Value is missing — scores for those are less reliable.")
 
-    # ── Run screener ──────────────────────────────────────────
+    # Run
     if run_btn:
         pb  = st.progress(0.0)
         stx = st.empty()
-        with st.spinner(""):
+        with st.spinner("Analyzing fundamentals…"):
             df = run_screener(STOCKS, progress_bar=pb, status_text=stx)
         pb.empty(); stx.empty()
         if df.empty:
-            st.error("Screener returned no results. Check your internet connection and try again.")
+            st.error("Screener returned no results. Check your internet connection.")
         else:
             st.session_state.screener_df = df
-            st.success(f"✅ Screener done — {len(df)} stocks analysed. Results cached for 5 minutes.")
+            st.success(f"✅ Done — {len(df)} stocks analysed and ranked.")
 
-    # ── Display results ───────────────────────────────────────
-    if st.session_state.screener_df is not None:
-        df_all = st.session_state.screener_df
+    if st.session_state.screener_df is None:
+        st.markdown("""
+<div class="glass-card" style="text-align:center;padding:40px">
+  <div style="font-size:2.5rem">📊</div>
+  <div style="color:#475569;margin-top:8px">Click <strong style="color:#93c5fd">Run Screener</strong> to fetch live data and rank all stocks by value opportunity.</div>
+</div>""", unsafe_allow_html=True)
+        return
 
-        # Apply user-friendly filters
-        df_filt = df_all.copy()
-        if signal_filter == "Potential buys (BUY or better)":
-            df_filt = df_filt[df_filt["Signal"].isin(["BUY","STRONG BUY"])]
-        elif signal_filter == "Best picks only (STRONG BUY)":
-            df_filt = df_filt[df_filt["Signal"] == "STRONG BUY"]
-        if quality_only:
-            # Only keep stocks where at least price + one valuation metric is available
-            df_filt = df_filt[df_filt["Data Quality"] >= 60]
+    df_all  = st.session_state.screener_df
 
-        # ── KPI row ───────────────────────────────────────────
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Stocks Screened", len(df_all),
-                  help="Total companies fetched and scored")
-        k2.metric("Showing",  len(df_filt),
-                  help="After applying your filters above")
-        k3.metric("Strong Buy / Buy",
-                  len(df_all[df_all["Signal"].isin(["STRONG BUY","BUY"])]),
-                  help="Stocks we think look attractively priced right now")
-        avg_sc = df_all["Score"].mean()
-        k4.metric("Market Avg Score", f"{avg_sc:.0f} / 100",
-                  help="Average value score across all screened stocks. Below 50 = market looks expensive.")
-        st.markdown("")
+    # Apply filters
+    df_filt = df_all.copy()
+    if signal_filter == "BUY signals or better":
+        df_filt = df_filt[df_filt["Signal"].isin(["BUY","STRONG BUY"])]
+    elif signal_filter == "STRONG BUY only":
+        df_filt = df_filt[df_filt["Signal"] == "STRONG BUY"]
+    if quality_only:
+        df_filt = df_filt[df_filt["Data Quality"] >= 60]
 
-        # Signal distribution mini-chart
-        sig_counts = df_all["Signal"].value_counts().reindex(
-            ["STRONG BUY","BUY","HOLD","AVOID"], fill_value=0)
-        sig_colors_map = {"STRONG BUY":"#16a34a","BUY":"#4ade80","HOLD":"#ca8a04","AVOID":"#dc2626"}
-        sc_fig = go.Figure(go.Bar(
-            x=sig_counts.index.tolist(), y=sig_counts.values.tolist(),
-            marker_color=[sig_colors_map[s] for s in sig_counts.index],
-            text=sig_counts.values.tolist(), textposition="outside",
-        ))
-        sc_fig.update_layout(
-            title="How the market looks right now — signal breakdown",
-            height=240, yaxis_title="Number of stocks",
-            margin={"t":50,"b":20,"l":10,"r":10}, showlegend=False,
+    # KPI row
+    kpi_tiles([
+        {"label": "Stocks Screened",   "value": len(df_all),
+         "help": "Total companies scored", "color": "#f1f5f9"},
+        {"label": "Showing",           "value": len(df_filt),
+         "help": "After filters",          "color": "#93c5fd"},
+        {"label": "Strong Buy / Buy",  "value": len(df_all[df_all["Signal"].isin(["STRONG BUY","BUY"])]),
+         "help": "Attractively priced",    "color": "#4ade80"},
+        {"label": "Market Avg Score",  "value": f"{df_all['Score'].mean():.0f}/100",
+         "help": "Below 50 = market looks expensive", "color": "#fbbf24"},
+    ])
+
+    # Signal chart
+    sig_order  = ["STRONG BUY","BUY","HOLD","AVOID"]
+    sig_clrs   = {"STRONG BUY":"#16a34a","BUY":"#4ade80","HOLD":"#ca8a04","AVOID":"#dc2626"}
+    sig_counts = df_all["Signal"].value_counts().reindex(sig_order, fill_value=0)
+    sc_fig = go.Figure(go.Bar(
+        x=sig_counts.index.tolist(), y=sig_counts.values.tolist(),
+        marker_color=[sig_clrs[s] for s in sig_counts.index],
+        text=sig_counts.values.tolist(), textposition="outside",
+        textfont={"color": "#e2e8f0"},
+    ))
+    sc_fig.update_layout(
+        title=dict(text="Signal distribution across all screened stocks", font={"size": 12}),
+        yaxis_title="# Stocks", yaxis={"gridcolor": "rgba(59,130,246,0.08)"},
+        height=230, showlegend=False, **_DARK_LAYOUT,
+    )
+    st.plotly_chart(sc_fig, use_container_width=True)
+
+    # Top picks
+    st.markdown("#### 🏆 Top Value Picks")
+    if df_filt.empty:
+        st.info("No stocks match the current filters. Try 'All stocks'.")
+    else:
+        top10 = df_filt.head(10)
+        for _, row in top10.iterrows():
+            signal = row.get("Signal","")
+            emoji  = row.get("Signal Emoji","")
+            score  = int(row.get("Score", 0))
+            graham = row.get("Graham No.")
+            roe    = row.get("ROE (%)")
+            pe     = row.get("P/E")
+            mos    = row.get("MoS %", 0)
+            price  = row.get("Price (₹)")
+
+            border = {"STRONG BUY":"#16a34a","BUY":"#4ade80","HOLD":"#ca8a04","AVOID":"#dc2626"}.get(signal,"#334155")
+
+            st.markdown(f"""
+<div style="background:rgba(15,23,42,0.7);border:1px solid rgba(59,130,246,0.12);
+border-left:3px solid {border};border-radius:12px;padding:14px 18px;margin-bottom:8px;
+display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+  <div style="flex:2;min-width:200px">
+    <div style="font-weight:700;color:#e2e8f0;font-size:.95rem">#{int(row['Rank'])} {row['Company']}</div>
+    <div style="color:#475569;font-size:.75rem;margin-top:2px">{row['Ticker']}</div>
+    <div style="color:#64748b;font-size:.78rem;margin-top:6px;line-height:1.4">{str(row.get('Explanation',''))[:120]}…</div>
+  </div>
+  <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">
+    <div style="text-align:center"><div style="color:#475569;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em">Price</div><div style="color:#f1f5f9;font-weight:700">{"₹"+f"{price:,.0f}" if price else "N/A"}</div></div>
+    <div style="text-align:center"><div style="color:#475569;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em">Fair Value</div><div style="color:#f1f5f9;font-weight:700">{"₹"+f"{graham:,.0f}" if graham else "N/A"}</div></div>
+    <div style="text-align:center"><div style="color:#475569;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em">MoS</div><div style="color:{"#22c55e" if mos>0 else "#ef4444"};font-weight:700">{mos:+.1f}%</div></div>
+    <div style="text-align:center"><div style="color:#475569;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em">ROE</div><div style="color:#f1f5f9">{f"{roe:.1f}%" if roe is not None else "N/A"}</div></div>
+    <div style="text-align:center"><div style="color:#475569;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em">Score</div><div style="color:{border};font-weight:700">{score}/100</div></div>
+  </div>
+</div>""", unsafe_allow_html=True)
+            if st.button(f"📈 Open Analysis — {row['Company'][:22]}", key=f"dd_{row['Ticker']}",
+                         use_container_width=False):
+                st.session_state.analysis_ticker = row["Ticker"]
+                st.toast(f"✅ {row['Company']} loaded — switch to 📈 Stock Analysis", icon="✅")
+
+    # Full table
+    st.markdown("#### 📋 Full Ranked Results")
+    screener_table(df_filt)
+
+    # Quick open from table
+    st.markdown("")
+    qa, qb = st.columns([3, 1])
+    with qa:
+        quick_pick = st.selectbox(
+            "Open any stock in the full analysis view →",
+            ["— pick a company —"] + df_filt["Company"].tolist(),
+            label_visibility="visible",
         )
-        st.plotly_chart(sc_fig, use_container_width=True)
+    with qb:
+        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+        if st.button("📈 Open Analysis", type="primary", use_container_width=True):
+            if quick_pick != "— pick a company —":
+                match = df_filt[df_filt["Company"] == quick_pick]
+                if not match.empty:
+                    st.session_state.analysis_ticker = match.iloc[0]["Ticker"]
+                    st.toast(f"✅ {quick_pick} loaded — switch to 📈 Stock Analysis tab!", icon="✅")
 
-        # ── Top 10 Value Picks ────────────────────────────────
-        st.markdown("#### 🏆 Top Value Picks")
-        if df_filt.empty:
-            st.info("No stocks match your current filters. Try selecting 'All stocks'.")
-        else:
-            top10 = df_filt.head(10)
-            for _, row in top10.iterrows():
-                signal = row.get("Signal","")
-                emoji  = row.get("Signal Emoji","")
-                score  = int(row.get("Score", 0))
-                graham = row.get("Graham No.")
-                roe    = row.get("ROE (%)")
-                pe     = row.get("P/E")
-                mos    = row.get("MoS %", 0)
-
-                with st.container():
-                    cc1, cc2, cc3, cc4, cc5, cc6 = st.columns([2.2, 1, 1, 1, 1, 0.9])
-                    with cc1:
-                        st.markdown(f"**{int(row['Rank'])}. {row['Company']}**  \n`{row['Ticker']}`")
-                        expl = row.get("Explanation","")
-                        st.caption(expl[:130] + ("…" if len(expl) > 130 else ""))
-                    with cc2:
-                        st.metric("Price", _fmt(row["Price (₹)"]))
-                    with cc3:
-                        g_label = _fmt(graham) if graham else "N/A"
-                        mos_str = f"{mos:+.1f}% vs Graham" if graham else ""
-                        st.metric("Fair Value", g_label, delta=mos_str if mos_str else None,
-                                  delta_color="normal" if mos >= 0 else "inverse")
-                    with cc4:
-                        st.metric("ROE",  f"{roe:.1f}%" if roe is not None else "N/A")
-                        st.metric("P/E",  f"{pe:.1f}×" if pe is not None else "N/A")
-                    with cc5:
-                        st.metric("Score", f"{score}/100")
-                        st.markdown(f"{emoji} **{signal}**")
-                    with cc6:
-                        # "Analyse" button — loads this stock in the Deep Analysis tab
-                        if st.button("📈 Deep Dive", key=f"dd_{row['Ticker']}", use_container_width=True,
-                                     help="Load this stock in the Deep Analysis tab"):
-                            st.session_state.analysis_ticker = row["Ticker"]
-                            st.toast(f"✅ {row['Company']} loaded — switch to the 📈 Deep Analysis tab!", icon="✅")
-                st.divider()
-
-        # ── Full ranked table ─────────────────────────────────
-        st.markdown("#### 📋 Full Results Table")
-        display_cols = [
-            "Rank","Ticker","Company","Price (₹)","Graham No.",
-            "MoS %","ROE (%)","P/E","D/E","Score","Signal","Data Quality"
-        ]
-        display_df = df_filt[[c for c in display_cols if c in df_filt.columns]].copy()
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
-
-        # ── Quick stock opener ────────────────────────────────
-        st.markdown("")
-        qa, qb = st.columns([3, 1])
-        with qa:
-            quick_pick = st.selectbox(
-                "🔍 Select any stock from the list to open its full analysis",
-                ["— pick a stock —"] + df_filt["Company"].tolist(),
-                label_visibility="visible",
-            )
-        with qb:
-            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-            if st.button("📈 Open Analysis", type="primary", use_container_width=True):
-                if quick_pick != "— pick a stock —":
-                    match = df_filt[df_filt["Company"] == quick_pick]
-                    if not match.empty:
-                        st.session_state.analysis_ticker = match.iloc[0]["Ticker"]
-                        st.toast(f"✅ {quick_pick} loaded — switch to the 📈 Deep Analysis tab!", icon="✅")
-                else:
-                    st.warning("Pick a stock first.")
-
-        # ── Export ────────────────────────────────────────────
-        st.markdown("")
-        st.download_button(
-            "⬇️ Download Results as CSV",
-            data=screener_to_csv(df_filt),
-            file_name="alphaforge_screener.csv",
-            mime="text/csv",
-            help="Opens in Excel or Google Sheets",
-        )
-
-        # ── Add to portfolio ──────────────────────────────────
-        st.markdown("")
-        st.markdown("#### ➕ Add to Portfolio Builder")
-        add_labels = st.multiselect(
-            "Select stocks to add to your portfolio",
-            options=df_filt["Company"].tolist(),
-            help="Stocks you pick here will appear in the Portfolio Builder tab.",
-        )
-        if add_labels and st.button("Add to Portfolio →", type="secondary"):
+    st.markdown("")
+    ex1, ex2 = st.columns(2)
+    with ex1:
+        st.download_button("⬇️ Download Results (CSV)", data=screener_to_csv(df_filt),
+                           file_name="kairoforge_screener.csv", mime="text/csv")
+    with ex2:
+        add_labels = st.multiselect("Add to Portfolio →",
+                                    options=df_filt["Company"].tolist(),
+                                    placeholder="Select stocks…")
+        if add_labels and st.button("➕ Add to Portfolio", type="secondary"):
             existing = {r["Company"] for r in st.session_state.portfolio_rows}
             added = 0
             for lbl in add_labels:
-                match = df_filt[df_filt["Company"] == lbl]
-                if not match.empty and lbl not in existing:
-                    st.session_state.portfolio_rows.append(match.iloc[0].to_dict())
-                    existing.add(lbl)
-                    added += 1
-            st.success(f"Added {added} stock(s) to your Portfolio. Switch to the 💼 Portfolio Builder tab.")
-    else:
-        st.info("👆 Click **Run Screener** above to analyse all stocks and see ranked results.")
+                m = df_filt[df_filt["Company"] == lbl]
+                if not m.empty and lbl not in existing:
+                    st.session_state.portfolio_rows.append(m.iloc[0].to_dict())
+                    existing.add(lbl); added += 1
+            st.success(f"Added {added} stock(s). Switch to 💼 Portfolio Builder.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# TAB 2 — DEEP ANALYSIS
+# PAGE: STOCK ANALYSIS
 # ═══════════════════════════════════════════════════════════════════════════
-with tab_analysis:
-    st.markdown("### Single-Stock Deep Analysis")
+def render_analysis():
+    page_header("📈 Stock Analysis", "In-depth Graham Number · 3-Stage DCF · Ratio analysis · Sensitivity")
 
-    # ── Stock selector ────────────────────────────────────────
-    da_col1, da_col2, da_col3 = st.columns([3, 1.5, 1])
-    with da_col1:
-        chosen = st.selectbox(
-            "🔍 Select a stock",
-            ["— choose —"] + SORTED_LABELS,
-            help="Type to filter by company name."
-        )
-    with da_col2:
-        custom_t = st.text_input("Or enter ticker", placeholder="e.g. ZOMATO.NS")
-    with da_col3:
+    # Stock selector
+    da1, da2, da3 = st.columns([3, 1.5, 1])
+    with da1:
+        chosen = st.selectbox("Search company", ["— choose a stock —"] + SORTED_LABELS,
+                               help="Start typing to filter")
+    with da2:
+        custom_t = st.text_input("Or enter NSE ticker", placeholder="e.g. ZOMATO.NS")
+    with da3:
         st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-        analyse_btn = st.button("Analyse 🚀", type="primary", use_container_width=True)
+        analyse_btn = st.button("Analyse →", type="primary", use_container_width=True)
 
     TICKER = None
     if custom_t.strip():
         TICKER = custom_t.strip().upper()
-    elif chosen != "— choose —":
+    elif chosen != "— choose a stock —":
         TICKER = STOCKS[chosen]
 
-    if analyse_btn and TICKER is None:
+    if analyse_btn and TICKER:
+        st.session_state.analysis_ticker = TICKER
+    elif analyse_btn:
         st.warning("Please select a stock or enter a ticker.")
 
-    if TICKER and analyse_btn:
-        st.session_state.analysis_ticker = TICKER
+    if not st.session_state.analysis_ticker:
+        st.markdown("""
+<div class="glass-card" style="text-align:center;padding:50px">
+  <div style="font-size:2.5rem">🔍</div>
+  <div style="color:#475569;margin-top:8px">Select a company and click <strong style="color:#93c5fd">Analyse</strong> to generate a full equity research report.</div>
+</div>""", unsafe_allow_html=True)
+        return
 
-    if st.session_state.analysis_ticker:
-        TICKER = st.session_state.analysis_ticker
+    TICKER = st.session_state.analysis_ticker
+    with st.spinner("Fetching fundamentals…"):
+        info = fetch_stock_data(TICKER)
+        hist = fetch_price_history(TICKER)
 
-        with st.spinner(f"Loading **{TICKER}** …"):
-            info = fetch_stock_data(TICKER)
-            hist = fetch_price_history(TICKER)
+    if not info:
+        st.error(f"No data returned for **{TICKER}**. Check the ticker format (e.g. RELIANCE.NS).")
+        return
 
-        if not info:
-            st.error(f"No data found for **{TICKER}**. Check the ticker format.")
-            st.stop()
+    price      = safe_get(info, "currentPrice") or safe_get(info, "regularMarketPrice")
+    eps        = safe_get(info, "trailingEps")
+    bvps       = safe_get(info, "bookValue")
+    name       = safe_get(info, "longName", TICKER)
+    sector     = safe_get(info, "sector", "")
+    industry   = safe_get(info, "industry", "")
+    mkt_cap    = safe_get(info, "marketCap")
+    shares_out = safe_get(info, "sharesOutstanding")
+    fcf_total  = safe_get(info, "freeCashflow")
+    beta       = safe_get(info, "beta", 1.0) or 1.0
 
-        price      = safe_get(info, "currentPrice") or safe_get(info, "regularMarketPrice")
-        eps        = safe_get(info, "trailingEps")
-        bvps       = safe_get(info, "bookValue")
-        name       = safe_get(info, "longName", TICKER)
-        sector     = safe_get(info, "sector", "")
-        industry   = safe_get(info, "industry", "")
-        mkt_cap    = safe_get(info, "marketCap")
-        shares_out = safe_get(info, "sharesOutstanding")
-        fcf_total  = safe_get(info, "freeCashflow")
-        beta       = safe_get(info, "beta", 1.0) or 1.0
+    # EPS / FCF fallbacks (same logic as screener)
+    net_inc = safe_get(info, "netIncomeToCommon")
+    if eps is None and net_inc and shares_out and shares_out > 0:
+        eps = net_inc / shares_out
+    fcf_ps = (fcf_total / shares_out) if (fcf_total and shares_out and shares_out > 0) else (eps or 1.0)
 
-        fcf_ps = (fcf_total / shares_out) if (fcf_total and shares_out and shares_out > 0) else None
-        graham = calculate_graham(eps, bvps)
-        ratios = calculate_ratios(info)
-        wacc   = estimate_wacc(info)
+    graham = calculate_graham(eps, bvps)
+    ratios = calculate_ratios(info)
+    wacc   = estimate_wacc(info)
 
-        # Quick signal
-        from screener import score_stock as _sc
-        quick_data = _sc(TICKER, name, info)
-        q_signal   = quick_data.get("Signal","")
-        q_score    = quick_data.get("Score", 0)
-        q_emoji    = quick_data.get("Signal Emoji","")
+    # Quick score for hero card
+    qd      = _score_stock(TICKER, name, info)
+    q_signal = qd.get("Signal","")
+    q_score  = qd.get("Score", 0)
+    q_emoji  = qd.get("Signal Emoji","")
+    q_expl   = qd.get("Explanation","")
 
-        # ── Company header ────────────────────────────────────
-        st.markdown(f"### {name}")
-        if sector: st.caption(f"{sector}  ·  {industry}  ·  `{TICKER}`")
+    # Hero card
+    hero_card(name, TICKER, sector or industry or "Equity", price,
+              q_signal, q_emoji, q_score, q_expl)
 
-        hd1, hd2, hd3 = st.columns([1, 1, 3])
-        with hd1:
-            st.plotly_chart(score_donut(q_score), use_container_width=True)
-        with hd2:
-            st.metric("Value Score", f"{q_score}/100")
-            st.markdown(f"**Signal:** {q_emoji} **{q_signal}**")
-        with hd3:
-            st.markdown("**Investment Rationale**")
-            st.markdown(quick_data.get("Explanation",""))
+    # Sub-tabs
+    ov, val, dcf_tab, sens = st.tabs([
+        "🏠 Overview", "📐 Valuation", "💹 DCF Model", "🔬 Sensitivity"
+    ])
 
-        st.divider()
+    # ── OVERVIEW ──────────────────────────────────────────────
+    with ov:
+        wh   = safe_get(info,"fiftyTwoWeekHigh")
+        wl   = safe_get(info,"fiftyTwoWeekLow")
+        cap  = "N/A"
+        if mkt_cap:
+            if mkt_cap >= 1e12: cap = f"₹{mkt_cap/1e12:.2f}T"
+            elif mkt_cap >= 1e9: cap = f"₹{mkt_cap/1e9:.1f}B"
+            else: cap = f"₹{mkt_cap/1e6:.0f}M"
 
-        # ── Sub-tabs ──────────────────────────────────────────
-        ov, val, dcf_tab, sens = st.tabs([
-            "🏠 Overview", "📐 Valuation", "💹 DCF", "🔬 Sensitivity"
+        kpi_tiles([
+            {"label": "Current Price",  "value": f"₹{price:,.2f}" if price else "N/A", "color": "#f1f5f9"},
+            {"label": "Market Cap",     "value": cap, "color": "#93c5fd"},
+            {"label": "Trailing EPS",   "value": f"₹{eps:,.2f}" if eps else "N/A",
+             "help": "Earnings per share (trailing 12 months)", "color": "#fbbf24"},
+            {"label": "Book Value/Share","value": f"₹{bvps:,.2f}" if bvps else "N/A",
+             "help": "Net asset value per share", "color": "#e2e8f0"},
+            {"label": "52-Week Range",  "value": f"₹{wl:,.0f}–₹{wh:,.0f}" if wh and wl else "N/A",
+             "color": "#94a3b8"},
+            {"label": "Beta",           "value": f"{beta:.2f}",
+             "help": "Market sensitivity (1 = moves with index)", "color": "#94a3b8"},
         ])
 
-        # ── Overview ─────────────────────────────────────────
-        with ov:
-            o1,o2,o3,o4,o5 = st.columns(5)
-            o1.metric("Price", _fmt(price))
-            cap = "N/A"
-            if mkt_cap:
-                if mkt_cap >= 1e12: cap = f"₹{mkt_cap/1e12:.2f}T"
-                elif mkt_cap >= 1e9: cap = f"₹{mkt_cap/1e9:.2f}B"
-                else: cap = f"₹{mkt_cap/1e6:.0f}M"
-            o2.metric("Market Cap", cap)
-            o3.metric("Trailing EPS", _fmt(eps))
-            o4.metric("Book Value", _fmt(bvps))
-            wh = safe_get(info,"fiftyTwoWeekHigh"); wl = safe_get(info,"fiftyTwoWeekLow")
-            o5.metric("52W Range", f"₹{wl:,.0f}–₹{wh:,.0f}" if wh and wl else "N/A")
+        st.markdown("")
+        if not hist.empty:
+            st.plotly_chart(make_hist_chart(hist, TICKER), use_container_width=True)
+        else:
+            st.info("Historical price data unavailable.")
 
-            st.markdown("")
-            if not hist.empty:
-                st.plotly_chart(make_hist_chart(hist, TICKER), use_container_width=True)
-            else:
-                st.info("Historical data unavailable.")
+        desc = safe_get(info, "longBusinessSummary")
+        if desc:
+            with st.expander("About the company"):
+                st.write(desc)
 
-            desc = safe_get(info, "longBusinessSummary")
-            if desc:
-                with st.expander("About the company"):
-                    st.write(desc)
+    # ── VALUATION ─────────────────────────────────────────────
+    with val:
+        st.markdown("#### Graham Number Analysis")
+        st.caption("The Graham Number — √(22.5 × EPS × Book Value) — is the maximum price a value investor should pay.")
 
-        # ── Valuation ─────────────────────────────────────────
-        with val:
-            st.markdown("#### Graham Number")
-            if graham is None:
-                st.warning("Graham Number unavailable — EPS or Book Value is negative/missing.")
-            else:
-                mos_pct  = (graham - price) / graham * 100
-                is_under = price < graham
+        if graham is None:
+            st.markdown("""
+<div class="glass-card">
+  <div style="color:#f87171;font-weight:600">⚠️ Graham Number unavailable</div>
+  <div style="color:#64748b;margin-top:6px;font-size:.85rem">EPS or Book Value is negative or missing. Graham Number can only be computed for profitable companies with positive book value.</div>
+</div>""", unsafe_allow_html=True)
+        else:
+            mos_pct  = (graham - price) / graham * 100
+            is_under = price < graham
+            sign_col = "#22c55e" if is_under else "#ef4444"
+            verdict  = f"{'✅ Undervalued' if is_under else '🔴 Overvalued'} by {abs(mos_pct):.1f}%"
+            st.markdown(f"""
+<div class="glass-card" style="border-color:{sign_col}33">
+  <div style="font-size:1.1rem;font-weight:700;color:{sign_col}">{verdict}</div>
+  <div style="color:#64748b;font-size:.82rem;margin-top:4px">Graham Number: <strong style="color:#e2e8f0">₹{graham:,.2f}</strong> &nbsp;·&nbsp; Current Price: <strong style="color:#e2e8f0">₹{price:,.2f}</strong></div>
+</div>""", unsafe_allow_html=True)
 
-                if is_under:
-                    st.success(f"✅ **Undervalued** — {mos_pct:.1f}% below Graham Number.")
-                    st.balloons()
-                else:
-                    st.error(f"🔴 **Overvalued** — {abs(mos_pct):.1f}% above Graham Number.")
+            gc, bc = st.columns(2)
+            with gc:
+                st.plotly_chart(make_gauge(price, graham, "Price vs Graham Number"),
+                                use_container_width=True)
+            with bc:
+                st.plotly_chart(make_bar_comp(
+                    ["Current Price","Graham Number"], [price, graham],
+                    ["#3b82f6","#22c55e" if is_under else "#ef4444"],
+                    "Price vs Graham Number (₹)"), use_container_width=True)
 
-                v1, v2, v3 = st.columns(3)
-                v1.metric("Current Price", _fmt(price))
-                v2.metric("Graham Number", _fmt(graham),
-                          delta=f"₹{abs(graham-price):,.0f} {'headroom' if is_under else 'excess'}",
-                          delta_color="normal" if is_under else "inverse")
-                v3.metric("Margin of Safety" if is_under else "Premium",
-                          f"{abs(mos_pct):.1f}%",
-                          delta_color="normal" if is_under else "inverse")
-
-                gc, bc = st.columns(2)
-                with gc:
-                    st.plotly_chart(make_gauge(price, graham, "Price vs Graham Number"),
-                                    use_container_width=True)
-                with bc:
-                    st.plotly_chart(make_bar_comp(
-                        ["Current Price","Graham Number"], [price, graham],
-                        ["#3b82f6","#22c55e" if is_under else "#ef4444"],
-                        "Price vs Graham Number (₹)"), use_container_width=True)
-
-                with st.expander("🧮 Formula"):
-                    st.markdown(f"""
-`Graham Number = √(22.5 × EPS × BVPS)`  
+            with st.expander("🧮 Formula breakdown"):
+                st.markdown(f"""
+`Graham Number = √(22.5 × EPS × Book Value per Share)`  
 = √(22.5 × {eps:.2f} × {bvps:.2f}) = √{22.5*eps*bvps:,.0f} = **₹{graham:,.2f}**
 """)
 
-            st.divider()
-            st.markdown("#### Key Ratios")
-            r1,r2,r3,r4 = st.columns(4)
-            pe  = ratios.get("P/E (Trailing)")
-            pb  = ratios.get("P/B")
-            roe = ratios.get("ROE (%)")
-            rc  = ratios.get("ROIC (%)")
-            de  = ratios.get("Debt / Equity")
-            eg  = ratios.get("EPS Growth (%)")
-            r1.metric("P/E (TTM)",   f"{pe:.1f}×" if pe else "N/A")
-            r1.metric("P/E (Fwd)",   f"{ratios.get('P/E (Forward)'):.1f}×" if ratios.get('P/E (Forward)') else "N/A")
-            r2.metric("P/B",         f"{pb:.2f}×" if pb else "N/A")
-            r2.metric("EPS Growth",  f"{eg:+.1f}%" if eg is not None else "N/A")
-            r3.metric("ROE",         f"{roe:.1f}%" if roe is not None else "N/A")
-            r3.metric("ROIC",        f"{rc:.1f}%" if rc is not None else "N/A")
-            r4.metric("Debt/Equity", f"{de:.2f}×" if de is not None else "N/A")
-            r4.metric("Div Yield",   f"{ratios.get('Dividend Yield (%)') or 0:.2f}%" )
+        st.divider()
+        st.markdown("#### Key Ratios")
+        pe  = ratios.get("P/E (Trailing)")
+        pb  = ratios.get("P/B")
+        roe = ratios.get("ROE (%)")
+        rc  = ratios.get("ROIC (%)")
+        de  = ratios.get("Debt / Equity")
+        eg  = ratios.get("EPS Growth (%)")
+        dy  = ratios.get("Dividend Yield (%)")
 
-        # ── DCF ───────────────────────────────────────────────
-        with dcf_tab:
-            st.markdown("#### 3-Stage DCF Valuation")
+        def _ratio_color(metric, v):
+            if v is None: return "#94a3b8"
+            if metric == "P/E":   return "#22c55e" if v<=15 else "#fbbf24" if v<=30 else "#ef4444"
+            if metric == "P/B":   return "#22c55e" if v<=1.5 else "#fbbf24" if v<=3 else "#ef4444"
+            if metric == "ROE":   return "#22c55e" if v>=20 else "#fbbf24" if v>=10 else "#ef4444"
+            if metric == "ROIC":  return "#22c55e" if v>=15 else "#fbbf24" if v>=8 else "#ef4444"
+            if metric == "DE":    return "#22c55e" if v<=0.5 else "#fbbf24" if v<=1.5 else "#ef4444"
+            return "#94a3b8"
 
-            # Fallback FCF → EPS
-            if not fcf_ps or fcf_ps <= 0:
-                if eps and eps > 0:
-                    fcf_ps = eps
-                    st.info(f"FCF data unavailable — using Trailing EPS (₹{eps:.2f}) as FCF proxy.")
-                else:
-                    fcf_ps = 1.0
-                    st.warning("No FCF or EPS data. Defaulting FCF to ₹1. Please adjust manually.")
+        kpi_tiles([
+            {"label":"P/E Ratio (TTM)","value":f"{pe:.1f}×" if pe else "N/A",
+             "help":"ℹ️ Price paid per ₹1 of earnings. Under 15 is generally cheap.",
+             "color":_ratio_color("P/E",pe)},
+            {"label":"P/B (Price/Book)","value":f"{pb:.2f}×" if pb else "N/A",
+             "help":"ℹ️ Price vs net asset value. Under 1.5 preferred by Graham.",
+             "color":_ratio_color("P/B",pb)},
+            {"label":"ROE (Return on Equity)","value":f"{roe:.1f}%" if roe is not None else "N/A",
+             "help":"ℹ️ How efficiently management earns profit. 20%+ is excellent.",
+             "color":_ratio_color("ROE",roe)},
+            {"label":"ROIC","value":f"{rc:.1f}%" if rc is not None else "N/A",
+             "help":"ℹ️ Return on all invested capital — includes debt.",
+             "color":_ratio_color("ROIC",rc)},
+            {"label":"Debt / Equity","value":f"{de:.2f}×" if de is not None else "N/A",
+             "help":"ℹ️ Financial leverage. Below 0.5 is low risk.",
+             "color":_ratio_color("DE",de)},
+            {"label":"EPS Growth (1Y)","value":f"{eg:+.1f}%" if eg is not None else "N/A",
+             "help":"ℹ️ Earnings per share change vs previous year.",
+             "color":"#22c55e" if (eg or 0)>0 else "#ef4444"},
+            {"label":"Dividend Yield","value":f"{dy:.2f}%" if dy else "0%",
+             "help":"ℹ️ Annual dividend as % of share price.",
+             "color":"#93c5fd"},
+        ])
 
-            d1, d2, d3 = st.columns(3)
-            with d1:
-                fcf_in = st.number_input("Base FCF/Share (₹)", 0.01, 50000.0,
-                                          float(round(fcf_ps, 2)), 1.0)
-                g1p = st.slider("Stage 1 Growth %", 0, 50, 20)
-                yr1 = st.slider("Stage 1 Years",    1, 10,  5)
-            with d2:
-                g2p = st.slider("Stage 2 End Growth %", 0, 20, 10)
-                yr2 = st.slider("Stage 2 Years",        1, 10,  5)
-                gTp = st.slider("Terminal Growth %",    1, 10,  4)
-            with d3:
-                wp  = st.slider("WACC %", 5, 25, int(round(wacc*100)),
-                                 help=f"Auto-estimated: {wacc*100:.1f}% (β={beta:.2f})")
-                st.markdown(f"**WACC estimate:** {wacc*100:.1f}%  \n"
-                             f"Rf=7.2%, ERP=7%, β={beta:.2f}")
+    # ── DCF ───────────────────────────────────────────────────
+    with dcf_tab:
+        st.markdown("#### 3-Stage DCF Valuation")
+        st.caption("Discounted Cash Flow — estimates intrinsic value by projecting future cash flows and discounting them back to today.")
 
-            g1,g2,gT,w = g1p/100, g2p/100, gTp/100, wp/100
-            res = calculate_dcf(fcf_in, g1, yr1, g2, yr2, gT, w)
-
-            if not res:
-                st.error("WACC must exceed terminal growth rate.")
+        if fcf_ps and fcf_ps > 0:
+            st.markdown(f"Using Free Cash Flow per share: **₹{fcf_ps:.2f}**")
+        else:
+            if eps and eps > 0:
+                fcf_ps = eps
+                st.info(f"FCF unavailable — using EPS (₹{eps:.2f}) as proxy.")
             else:
-                iv = res["intrinsic_value"]
-                dp = (iv - price) / iv * 100
-                du = price < iv
-                if du:
-                    st.success(f"✅ DCF Intrinsic Value **₹{iv:,.0f}** vs Price ₹{price:,.0f}  |  MoS {abs(dp):.1f}%")
-                else:
-                    st.error(f"🔴 DCF Intrinsic Value **₹{iv:,.0f}** vs Price ₹{price:,.0f}  |  Premium {abs(dp):.1f}%")
+                fcf_ps = 1.0
+                st.warning("No FCF or EPS data. Defaulting to ₹1 — please adjust.")
 
-                dc1,dc2,dc3,dc4 = st.columns(4)
-                dc1.metric("Intrinsic Value", _fmt(iv))
-                dc2.metric("PV Stage 1",      _fmt(res["pv_stage1"]))
-                dc3.metric("PV Stage 2",      _fmt(res["pv_stage2"]))
-                dc4.metric("PV Terminal",     _fmt(res["pv_terminal"]))
+        d1, d2, d3 = st.columns(3)
+        with d1:
+            st.markdown("**Stage 1 — High Growth**")
+            fcf_in = st.number_input("Base FCF/Share (₹)", 0.01, 50000.0,
+                                      float(round(max(fcf_ps,0.01),2)), 1.0)
+            g1p = st.slider("Growth rate %", 0, 50, 20, key="g1p")
+            yr1 = st.slider("Years",         1, 10, 5,  key="yr1")
+        with d2:
+            st.markdown("**Stage 2 — Transition**")
+            g2p = st.slider("Ending growth %", 0, 20, 10, key="g2p")
+            yr2 = st.slider("Years",            1, 10, 5,  key="yr2")
+            gTp = st.slider("Terminal growth %",1, 10, 4,  key="gTp")
+        with d3:
+            st.markdown("**Discount Rate (WACC)**")
+            wp  = st.slider("WACC %", 5, 25, int(round(wacc*100)), key="wp",
+                             help=f"Auto-estimated: {wacc*100:.1f}% using CAPM (β={beta:.2f})")
+            st.markdown(f"""
+<div class="glass-card" style="padding:12px 16px;font-size:.82rem">
+  <div style="color:#64748b">Auto WACC: <strong style="color:#93c5fd">{wacc*100:.1f}%</strong></div>
+  <div style="color:#334155;margin-top:4px">Rf=7.2% · ERP=7% · β={beta:.2f}</div>
+</div>""", unsafe_allow_html=True)
 
-                ch1,ch2 = st.columns(2)
-                with ch1: st.plotly_chart(make_dcf_waterfall(res), use_container_width=True)
-                with ch2: st.plotly_chart(make_gauge(price, iv, "Price vs DCF Value"),
-                                           use_container_width=True)
+        g1, g2, gT, w = g1p/100, g2p/100, gTp/100, wp/100
+        res = calculate_dcf(fcf_in, g1, yr1, g2, yr2, gT, w)
 
-                with st.expander("📋 Year-by-year cash flows"):
-                    rows = [{"Year":yr,"Nominal FCF":f"₹{f:,.2f}","PV":f"₹{pv:,.2f}"}
-                            for yr,f,pv in res["stage_cashflows"]]
-                    rows.append({"Year":"Terminal","Nominal FCF":f"₹{res['terminal_value']:,.2f}",
-                                 "PV":f"₹{res['pv_terminal']:,.2f}"})
-                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        if not res:
+            st.error("WACC must be higher than the terminal growth rate.")
+        else:
+            iv   = res["intrinsic_value"]
+            dp   = (iv - price) / iv * 100
+            du   = price < iv
+            col  = "#22c55e" if du else "#ef4444"
+            verdict = f"{'✅ Undervalued' if du else '🔴 Overvalued'} by {abs(dp):.1f}% vs DCF value"
 
-        # ── Sensitivity ───────────────────────────────────────
-        with sens:
-            st.markdown("#### Sensitivity Analysis — DCF vs WACC & Terminal Growth")
+            st.markdown(f"""
+<div class="glass-card" style="border-color:{col}33;margin-top:8px">
+  <div style="font-size:1.05rem;font-weight:700;color:{col}">{verdict}</div>
+  <div style="color:#64748b;font-size:.82rem;margin-top:4px">DCF Intrinsic Value: <strong style="color:#e2e8f0">₹{iv:,.0f}</strong> &nbsp;·&nbsp; Market Price: <strong style="color:#e2e8f0">₹{price:,.0f}</strong></div>
+</div>""", unsafe_allow_html=True)
+
+            kpi_tiles([
+                {"label":"Intrinsic Value",  "value":f"₹{iv:,.0f}",     "help":"DCF fair value",         "color":col},
+                {"label":"PV Stage 1",       "value":f"₹{res['pv_stage1']:,.0f}", "help":"High-growth cash flows","color":"#22c55e"},
+                {"label":"PV Stage 2",       "value":f"₹{res['pv_stage2']:,.0f}", "help":"Transition cash flows",  "color":"#fbbf24"},
+                {"label":"PV Terminal",      "value":f"₹{res['pv_terminal']:,.0f}","help":"Perpetuity value",       "color":"#3b82f6"},
+            ])
+
+            ch1, ch2 = st.columns(2)
+            with ch1:
+                st.plotly_chart(make_dcf_waterfall(res), use_container_width=True)
+            with ch2:
+                st.plotly_chart(make_gauge(price, iv, "Price vs DCF Intrinsic Value"),
+                                use_container_width=True)
+
+            with st.expander("📋 Year-by-year cash flow table"):
+                rows = [{"Year":yr,"FCF (₹)":f"₹{f:,.2f}","PV (₹)":f"₹{pv:,.2f}"}
+                        for yr,f,pv in res["stage_cashflows"]]
+                rows.append({"Year":"Terminal","FCF (₹)":f"₹{res['terminal_value']:,.2f}",
+                             "PV (₹)":f"₹{res['pv_terminal']:,.2f}"})
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    # ── SENSITIVITY ───────────────────────────────────────────
+    with sens:
+        st.markdown("#### Sensitivity Analysis")
+        st.caption("See how the DCF fair value changes as WACC and terminal growth assumptions shift.")
+
+        try:
+            res
+        except NameError:
+            st.warning("Complete the DCF tab first (select parameters).")
+        else:
             if not res:
-                st.warning("Complete the DCF tab first.")
+                st.warning("DCF returned no result — check WACC vs terminal growth.")
             else:
-                base_w = wp / 100
-                w_range = [round(base_w - 0.03 + i*0.01, 3) for i in range(7)]
-                w_range = [x for x in w_range if 0.05 <= x <= 0.25]
+                base_w  = wp / 100
+                w_range = sorted({round(base_w + (i-3)*0.01, 3) for i in range(7)
+                                   if 0.05 <= round(base_w+(i-3)*0.01,3) <= 0.25})
                 g_range = [round(0.02 + i*0.01, 2) for i in range(6)]
 
-                with st.spinner("Computing …"):
+                with st.spinner("Computing…"):
                     sdf = run_sensitivity(fcf_in, g1, yr1, g2, yr2, w_range, g_range)
 
                 st.plotly_chart(make_sensitivity_heatmap(sdf, price), use_container_width=True)
@@ -671,159 +1031,144 @@ with tab_analysis:
                 for col in fmt_df.columns:
                     fmt_df[col] = fmt_df[col].apply(lambda v: f"₹{v:,.0f}" if pd.notna(v) else "—")
                 st.dataframe(fmt_df, use_container_width=True)
-    else:
-        st.info("Select a stock and click **Analyse** to begin.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# TAB 3 — PORTFOLIO BUILDER
+# PAGE: PORTFOLIO BUILDER
 # ═══════════════════════════════════════════════════════════════════════════
-with tab_portfolio:
-    st.markdown("### Portfolio Builder")
-    st.caption(
-        "Build a hypothetical equal-weight portfolio from screener results.  "
-        "Run the Screener first, then add stocks via the Screener tab — or search below."
-    )
+def render_portfolio():
+    page_header("💼 Portfolio Builder", "Simulate an equal-weight portfolio from your screener picks.")
 
-    # Allow manual add directly in portfolio tab too
     if st.session_state.screener_df is not None:
         df_scr = st.session_state.screener_df
-        all_names = df_scr["Company"].tolist()
-        current_in_portfolio = [r["Company"] for r in st.session_state.portfolio_rows]
+        in_port = {r["Company"] for r in st.session_state.portfolio_rows}
+        avail   = [n for n in df_scr["Company"].tolist() if n not in in_port]
 
-        manual_add = st.multiselect(
-            "Add stocks from screener",
-            options=[n for n in all_names if n not in current_in_portfolio],
-            max_selections=10,
-        )
-        if manual_add and st.button("➕ Add to Portfolio", type="secondary"):
-            existing = {r["Company"] for r in st.session_state.portfolio_rows}
-            for lbl in manual_add:
-                match = df_scr[df_scr["Company"] == lbl]
-                if not match.empty and lbl not in existing:
-                    st.session_state.portfolio_rows.append(match.iloc[0].to_dict())
-            st.rerun()
+        pa, pb = st.columns([3, 1])
+        with pa:
+            manual_add = st.multiselect("Add stocks from screener", options=avail,
+                                        placeholder="Search and select…", max_selections=10)
+        with pb:
+            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+            if st.button("➕ Add", type="primary", use_container_width=True) and manual_add:
+                for lbl in manual_add:
+                    m = df_scr[df_scr["Company"] == lbl]
+                    if not m.empty and lbl not in in_port:
+                        st.session_state.portfolio_rows.append(m.iloc[0].to_dict())
+                        in_port.add(lbl)
+                st.rerun()
     else:
-        st.info("Run the Screener tab first to enable stock selection.")
+        st.info("Run the **📊 Screener** first to enable stock selection.")
 
-    # ── Remove stocks ─────────────────────────────────────────
     if st.session_state.portfolio_rows:
-        remove_names = st.multiselect(
-            "Remove stocks from portfolio",
-            options=[r["Company"] for r in st.session_state.portfolio_rows],
-        )
-        if remove_names and st.button("🗑️ Remove Selected", type="secondary"):
-            st.session_state.portfolio_rows = [
-                r for r in st.session_state.portfolio_rows
-                if r["Company"] not in remove_names
-            ]
+        to_remove = st.multiselect("Remove stocks", [r["Company"] for r in st.session_state.portfolio_rows])
+        if to_remove and st.button("🗑️ Remove", type="secondary"):
+            st.session_state.portfolio_rows = [r for r in st.session_state.portfolio_rows
+                                               if r["Company"] not in to_remove]
             st.rerun()
 
     if not st.session_state.portfolio_rows:
-        st.info("Your portfolio is empty. Add stocks from the Screener tab.")
-    else:
-        port_df  = build_portfolio(st.session_state.portfolio_rows)
-        metrics  = compute_portfolio_metrics(port_df)
+        st.markdown("""
+<div class="glass-card" style="text-align:center;padding:40px">
+  <div style="font-size:2.5rem">💼</div>
+  <div style="color:#475569;margin-top:8px">Your portfolio is empty.<br>Run the Screener, then add stocks here to build a hypothetical portfolio.</div>
+</div>""", unsafe_allow_html=True)
+        return
 
-        st.divider()
-        st.markdown("#### Portfolio Metrics")
+    port_df = build_portfolio(st.session_state.portfolio_rows)
+    metrics = compute_portfolio_metrics(port_df)
 
-        pm1,pm2,pm3,pm4,pm5 = st.columns(5)
-        pm1.metric("Stocks", metrics["n_stocks"])
-        pm2.metric("Avg Score", f"{metrics['avg_score']:.1f}/100")
-        pm3.metric("Avg MoS", f"{metrics['avg_mos']:+.1f}%")
-        pm4.metric("Avg Beta",  f"{metrics['avg_beta']:.2f}")
-        pm5.metric("Risk Level", metrics["risk_level"])
+    risk_color = {"LOW": "#22c55e", "MEDIUM": "#fbbf24", "HIGH": "#ef4444"}.get(
+        metrics.get("risk_level","MEDIUM"), "#94a3b8")
 
-        roe_v = metrics.get("avg_roe")
-        dq_v  = metrics.get("avg_data_quality")
-        pm_x1, pm_x2 = st.columns(2)
-        if roe_v: pm_x1.metric("Avg ROE", f"{roe_v:.1f}%")
-        if dq_v:  pm_x2.metric("Avg Data Quality", f"{int(dq_v)}/100")
+    kpi_tiles([
+        {"label":"Holdings",        "value":metrics["n_stocks"],              "color":"#f1f5f9"},
+        {"label":"Avg Value Score", "value":f"{metrics['avg_score']:.0f}/100","color":"#93c5fd"},
+        {"label":"Avg Margin of Safety","value":f"{metrics['avg_mos']:+.1f}%",
+         "help":"ℹ️ How far below fair value on average",
+         "color":"#22c55e" if metrics['avg_mos']>0 else "#ef4444"},
+        {"label":"Avg Beta",        "value":f"{metrics['avg_beta']:.2f}",
+         "help":"ℹ️ Portfolio volatility vs market","color":"#fbbf24"},
+        {"label":"Portfolio Risk",  "value":metrics.get("risk_level","—"),   "color":risk_color},
+        {"label":"Avg Data Quality","value":f"{int(metrics.get('avg_data_quality',0))}/100","color":"#94a3b8"},
+    ])
 
-        st.markdown("")
+    # Holdings table
+    st.markdown("#### Holdings")
+    disp = ["Ticker","Company","Price (₹)","Weight (%)","Score","Signal","MoS (%)","ROE (%)","Beta"]
+    st.dataframe(port_df[[c for c in disp if c in port_df.columns]],
+                 use_container_width=True, hide_index=True)
 
-        # ── Holdings table ────────────────────────────────────
-        st.markdown("#### Holdings")
-        disp_cols = ["Ticker","Company","Price (₹)","Weight (%)","Score","Signal","MoS (%)","ROE (%)","Beta"]
-        st.dataframe(port_df[[c for c in disp_cols if c in port_df.columns]],
-                     use_container_width=True, hide_index=True)
+    # Charts
+    pie_col, bar_col = st.columns(2)
+    with pie_col:
+        pie = go.Figure(go.Pie(
+            labels=port_df["Company"].str[:22].tolist(),
+            values=port_df["Weight (%)"].tolist(),
+            hole=0.5, textinfo="label+percent",
+            textfont={"size": 11},
+            marker={"line": {"color": "rgba(0,0,0,0)", "width": 0}},
+        ))
+        pie.update_layout(title="Allocation", height=330, showlegend=False, **_DARK_LAYOUT)
+        st.plotly_chart(pie, use_container_width=True)
 
-        st.markdown("")
+    with bar_col:
+        sig_c = {"STRONG BUY":"#16a34a","BUY":"#4ade80","HOLD":"#ca8a04","AVOID":"#dc2626"}
+        sc_b  = go.Figure(go.Bar(
+            x=port_df["Company"].str[:20].tolist(),
+            y=port_df["Score"].tolist(),
+            marker_color=[sig_c.get(s,"#94a3b8") for s in port_df["Signal"].tolist()],
+            text=port_df["Score"].tolist(), textposition="outside",
+            textfont={"color":"#e2e8f0"},
+        ))
+        sc_b.update_layout(title="Value Score by Holding", height=330, yaxis_range=[0,115],
+                           yaxis={"gridcolor":"rgba(59,130,246,0.08)"},
+                           xaxis_tickangle=-30, **_DARK_LAYOUT)
+        st.plotly_chart(sc_b, use_container_width=True)
 
-        # ── Allocation pie ────────────────────────────────────
-        pie_col, bar_col = st.columns(2)
-        with pie_col:
-            pie = go.Figure(go.Pie(
-                labels=port_df["Company"].str[:20].tolist(),
-                values=port_df["Weight (%)"].tolist(),
-                hole=0.45, textinfo="label+percent",
-            ))
-            pie.update_layout(title="Portfolio Allocation", height=340,
-                               margin={"t":60,"b":10,"l":10,"r":10}, showlegend=False)
-            st.plotly_chart(pie, use_container_width=True)
+    # Signal count
+    sc_c = metrics.get("signal_counts",{})
+    if sc_c:
+        emoji_m = {"STRONG BUY":"🟢","BUY":"🟩","HOLD":"🟡","AVOID":"🔴"}
+        sig_tiles = [{"label":f"{emoji_m.get(s,'')} {s}","value":v,
+                      "color":{"STRONG BUY":"#22c55e","BUY":"#4ade80","HOLD":"#fbbf24","AVOID":"#ef4444"}.get(s,"#94a3b8")}
+                     for s,v in sc_c.items()]
+        kpi_tiles(sig_tiles)
 
-        with bar_col:
-            # Score comparison bar
-            sc_bar = go.Figure(go.Bar(
-                x=port_df["Company"].str[:20].tolist(),
-                y=port_df["Score"].tolist(),
-                marker_color=[
-                    "#16a34a" if s == "STRONG BUY" else
-                    "#4ade80" if s == "BUY" else
-                    "#ca8a04" if s == "HOLD" else "#dc2626"
-                    for s in port_df["Signal"].tolist()
-                ],
-                text=port_df["Score"].tolist(), textposition="outside",
-            ))
-            sc_bar.update_layout(title="Value Score by Holding", height=340,
-                                  yaxis_range=[0,110], yaxis_title="Score",
-                                  margin={"t":60,"b":30,"l":10,"r":10},
-                                  xaxis_tickangle=-30)
-            st.plotly_chart(sc_bar, use_container_width=True)
+    # Rationale
+    with st.expander("📝 Investment rationale — all holdings"):
+        for _, row in port_df.iterrows():
+            st.markdown(f"**{row['Company']}** `{row['Ticker']}` — Score {row['Score']}/100 · {row['Signal']}")
+            st.markdown(row.get("Explanation",""))
+            st.divider()
 
-        # ── Signal distribution ───────────────────────────────
-        sc_counts = metrics.get("signal_counts", {})
-        if sc_counts:
-            sig_order = ["STRONG BUY","BUY","HOLD","AVOID"]
-            sig_cols  = st.columns(len(sig_order))
-            sig_emoji = {"STRONG BUY":"🟢","BUY":"🟩","HOLD":"🟡","AVOID":"🔴"}
-            for col, sig in zip(sig_cols, sig_order):
-                count = sc_counts.get(sig, 0)
-                col.metric(f"{sig_emoji[sig]} {sig}", count)
+    st.download_button("⬇️ Download Portfolio (CSV)", data=portfolio_to_csv(port_df),
+                       file_name="kairoforge_portfolio.csv", mime="text/csv")
 
-        st.markdown("")
 
-        # ── Per-stock explanations ────────────────────────────
-        with st.expander("📝 Investment Rationale — All Holdings"):
-            for _, row in port_df.iterrows():
-                st.markdown(f"**{row['Company']}** (`{row['Ticker']}`)"
-                            f" — Score: {row['Score']}/100 · {row['Signal']}")
-                st.markdown(row.get("Explanation",""))
-                st.divider()
-
-        # ── Export ────────────────────────────────────────────
-        st.download_button(
-            "⬇️ Download Portfolio (CSV)",
-            data=portfolio_to_csv(port_df),
-            file_name="portfolio.csv",
-            mime="text/csv",
-        )
+# ─────────────────────────────────────────────────────────────────────────────
+# ROUTER
+# ─────────────────────────────────────────────────────────────────────────────
+if   "Screener"  in page: render_screener()
+elif "Analysis"  in page: render_analysis()
+elif "Portfolio" in page: render_portfolio()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FOOTER
 # ─────────────────────────────────────────────────────────────────────────────
 st.divider()
-st.caption(
-    "⚠️ **Disclaimer:** For educational purposes only — not financial advice.  "
-    "All valuations are model-based estimates. Consult a qualified financial adviser "
-    "before making any investment decisions."
+st.markdown(
+    "<div style='color:#1e293b;font-size:.78rem;text-align:center'>"
+    "⚠️ For educational purposes only — not financial advice. "
+    "All valuations are model-based estimates. Consult a qualified financial adviser before investing."
+    "</div>",
+    unsafe_allow_html=True,
 )
 st.markdown(
-    "<div style='text-align:center;color:#64748b;font-size:0.82rem;padding-top:8px'>"
-    "Created by <strong>Dhruv Vaniawala</strong> · "
-    "<a href='mailto:uwddhruv@gmail.com' style='color:#64748b'>uwddhruv@gmail.com</a>"
+    "<div style='text-align:center;color:#334155;font-size:.78rem;padding:6px 0 12px'>"
+    "Created by <strong style='color:#475569'>Dhruv Vaniawala</strong> &nbsp;·&nbsp; "
+    "<a href='mailto:uwddhruv@gmail.com' style='color:#3b82f6;text-decoration:none'>uwddhruv@gmail.com</a>"
     "</div>",
     unsafe_allow_html=True,
 )
