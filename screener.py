@@ -81,11 +81,27 @@ def score_stock(ticker: str, name: str, info: dict) -> dict:
     dict
         All inputs, scores, ratios, signal, and explanation fields.
     """
-    price  = safe_get(info, "currentPrice") or safe_get(info, "regularMarketPrice")
-    eps    = safe_get(info, "trailingEps")
-    bvps   = safe_get(info, "bookValue")
-    roe    = safe_get(info, "returnOnEquity")     # decimal
-    beta   = safe_get(info, "beta", 1.0) or 1.0
+    price    = safe_get(info, "currentPrice") or safe_get(info, "regularMarketPrice")
+    bvps     = safe_get(info, "bookValue")
+    beta     = safe_get(info, "beta", 1.0) or 1.0
+    net_inc  = safe_get(info, "netIncomeToCommon")
+    shares   = safe_get(info, "sharesOutstanding")
+
+    # ── EPS with fallbacks ────────────────────────────────────
+    # yfinance often omits trailingEps for Indian stocks; fall back to
+    # computing from netIncomeToCommon / sharesOutstanding.
+    eps = safe_get(info, "trailingEps") or safe_get(info, "earningsPerShare")
+    if eps is None and net_inc and shares and shares > 0:
+        eps = net_inc / shares
+
+    # ── ROE with fallbacks ────────────────────────────────────
+    # returnOnEquity is frequently absent; reconstruct from net income / equity.
+    roe = safe_get(info, "returnOnEquity")
+    if roe is None and net_inc and bvps and shares and shares > 0 and bvps > 0:
+        equity = bvps * shares
+        if equity > 0:
+            roe = net_inc / equity
+
     ratios = calculate_ratios(info)
     graham = calculate_graham(eps, bvps)
     dq     = data_quality_score(info)
@@ -107,13 +123,15 @@ def score_stock(ticker: str, name: str, info: dict) -> dict:
         g_score = 0   # overvalued by Graham
 
     # ── ROE quality (0-25) ───────────────────────────────────
-    roe_pct = (roe or 0) * 100
-    if roe and roe_pct >= 25:   r_score = 25
-    elif roe and roe_pct >= 20: r_score = 20
-    elif roe and roe_pct >= 15: r_score = 15
-    elif roe and roe_pct >= 10: r_score = 10
-    elif roe and roe_pct > 0:   r_score = 5
-    else:                        r_score = 0
+    # Use explicit None check — Python treats 0.0 as falsy which would
+    # misclassify a stock with exactly 0% ROE.
+    roe_pct = (roe * 100) if roe is not None else None
+    if roe_pct is not None and roe_pct >= 25:   r_score = 25
+    elif roe_pct is not None and roe_pct >= 20: r_score = 20
+    elif roe_pct is not None and roe_pct >= 15: r_score = 15
+    elif roe_pct is not None and roe_pct >= 10: r_score = 10
+    elif roe_pct is not None and roe_pct > 0:   r_score = 5
+    else:                                         r_score = 0
 
     # ── P/E score (0-20) ────────────────────────────────────
     if pe is None:              pe_score = 5   # neutral when unknown
@@ -152,7 +170,7 @@ def score_stock(ticker: str, name: str, info: dict) -> dict:
         "Price (₹)":    round(price, 2) if price else None,
         "Graham No.":   round(graham, 2) if graham else None,
         "MoS %":        round(mos_pct, 1),
-        "ROE (%)":      round(roe_pct, 1) if roe else None,
+        "ROE (%)":      round(roe_pct, 1) if roe_pct is not None else None,
         "P/E":          round(pe, 1) if pe else None,
         "D/E":          round(de, 2) if de is not None else None,
         "Beta":         round(beta, 2),
@@ -242,14 +260,16 @@ def generate_explanation(data: dict) -> str:
                 f"suggesting the price has baked in a premium."
             )
 
-    # ROE component
-    roe = data.get("roe_pct", 0)
-    if roe and roe > 15:
+    # ROE component — use explicit None check to avoid treating 0% as missing
+    roe = data.get("roe_pct")   # may be None
+    if roe is not None and roe > 15:
         parts.append(f"Strong ROE of {roe:.1f}% indicates quality capital allocation.")
-    elif roe and 5 < roe <= 15:
+    elif roe is not None and roe > 5:
         parts.append(f"Moderate ROE of {roe:.1f}% — adequate but not exceptional.")
     elif roe is not None:
         parts.append(f"Weak ROE of {roe:.1f}% raises questions about profitability.")
+    else:
+        parts.append("ROE data unavailable — profitability could not be assessed.")
 
     # P/E component
     pe = data.get("pe")

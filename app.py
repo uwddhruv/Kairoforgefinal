@@ -223,21 +223,43 @@ tab_screen, tab_analysis, tab_portfolio = st.tabs([
 # ═══════════════════════════════════════════════════════════════════════════
 with tab_screen:
     st.markdown("### Value Screener — Nifty Top Stocks")
-    st.caption(
-        f"Screens **{len(STOCKS)} NSE-listed companies** using a composite Value Opportunity Score.  "
-        "Scores are based on Graham Margin of Safety (40 pts), ROE quality (25 pts), "
-        "P/E reasonableness (20 pts), and Debt/Equity safety (15 pts)."
-    )
 
-    sc1, sc2, sc3 = st.columns([2, 1, 1])
-    with sc1:
-        run_btn = st.button("🚀 Run Screener", type="primary", use_container_width=True)
-    with sc2:
-        min_score = st.slider("Min Score Filter", 0, 100, 0, 5)
-    with sc3:
-        min_dq = st.slider("Min Data Quality", 0, 100, 50, 5)
+    # ── Plain-language intro ───────────────────────────────────
+    with st.expander("ℹ️  How does the screener work?", expanded=False):
+        st.markdown("""
+The screener automatically fetches live data for **{n} NSE-listed companies** and
+rates each one on four things every value investor cares about:
 
-    # ── Run screener ─────────────────────────────────────────
+| What we check | Why it matters | Max points |
+|---|---|---|
+| **Price vs Graham Number** | Is the stock cheaper than what Benjamin Graham's formula says it's worth? | 40 |
+| **Return on Equity (ROE)** | Is the company using shareholder money efficiently? | 25 |
+| **P/E Ratio** | Are you paying a fair price relative to earnings? | 20 |
+| **Debt level** | Does the company carry too much debt? | 15 |
+
+The total gives a **Value Score out of 100**.  
+Stocks scoring **70+** get a 🟢 STRONG BUY signal, **50–69** get BUY, **30–49** HOLD, and below 30 AVOID.
+        """.format(n=len(STOCKS)))
+
+    # ── Controls row ──────────────────────────────────────────
+    ctrl1, ctrl2, ctrl3 = st.columns([1.5, 2, 1.5])
+    with ctrl1:
+        run_btn = st.button("🚀 Run Screener", type="primary", use_container_width=True,
+                            help="Fetches live data for all stocks and scores them. Takes ~20 seconds.")
+    with ctrl2:
+        signal_filter = st.radio(
+            "Which stocks to show",
+            ["All stocks", "Potential buys (BUY or better)", "Best picks only (STRONG BUY)"],
+            horizontal=True,
+        )
+    with ctrl3:
+        quality_only = st.checkbox(
+            "Complete data only",
+            value=True,
+            help="Hides stocks where key data like EPS or Book Value is missing, making the score unreliable.",
+        )
+
+    # ── Run screener ──────────────────────────────────────────
     if run_btn:
         pb  = st.progress(0.0)
         stx = st.empty()
@@ -248,110 +270,153 @@ with tab_screen:
             st.error("Screener returned no results. Check your internet connection and try again.")
         else:
             st.session_state.screener_df = df
-            st.success(f"Screener complete — {len(df)} stocks analysed.")
+            st.success(f"✅ Screener done — {len(df)} stocks analysed. Results cached for 5 minutes.")
 
     # ── Display results ───────────────────────────────────────
     if st.session_state.screener_df is not None:
         df_all = st.session_state.screener_df
 
-        # Apply filters
-        df_filt = df_all[
-            (df_all["Score"] >= min_score) &
-            (df_all["Data Quality"] >= min_dq)
-        ].copy()
+        # Apply user-friendly filters
+        df_filt = df_all.copy()
+        if signal_filter == "Potential buys (BUY or better)":
+            df_filt = df_filt[df_filt["Signal"].isin(["BUY","STRONG BUY"])]
+        elif signal_filter == "Best picks only (STRONG BUY)":
+            df_filt = df_filt[df_filt["Signal"] == "STRONG BUY"]
+        if quality_only:
+            # Only keep stocks where at least price + one valuation metric is available
+            df_filt = df_filt[df_filt["Data Quality"] >= 60]
 
         # ── KPI row ───────────────────────────────────────────
         k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Stocks Screened", len(df_all))
-        k2.metric("Passed Filters",  len(df_filt))
+        k1.metric("Stocks Screened", len(df_all),
+                  help="Total companies fetched and scored")
+        k2.metric("Showing",  len(df_filt),
+                  help="After applying your filters above")
         k3.metric("Strong Buy / Buy",
-                  len(df_all[df_all["Signal"].isin(["STRONG BUY","BUY"])]))
-        k4.metric("Avg Score", f"{df_all['Score'].mean():.1f}/100")
-
+                  len(df_all[df_all["Signal"].isin(["STRONG BUY","BUY"])]),
+                  help="Stocks we think look attractively priced right now")
+        avg_sc = df_all["Score"].mean()
+        k4.metric("Market Avg Score", f"{avg_sc:.0f} / 100",
+                  help="Average value score across all screened stocks. Below 50 = market looks expensive.")
         st.markdown("")
 
+        # Signal distribution mini-chart
+        sig_counts = df_all["Signal"].value_counts().reindex(
+            ["STRONG BUY","BUY","HOLD","AVOID"], fill_value=0)
+        sig_colors_map = {"STRONG BUY":"#16a34a","BUY":"#4ade80","HOLD":"#ca8a04","AVOID":"#dc2626"}
+        sc_fig = go.Figure(go.Bar(
+            x=sig_counts.index.tolist(), y=sig_counts.values.tolist(),
+            marker_color=[sig_colors_map[s] for s in sig_counts.index],
+            text=sig_counts.values.tolist(), textposition="outside",
+        ))
+        sc_fig.update_layout(
+            title="How the market looks right now — signal breakdown",
+            height=240, yaxis_title="Number of stocks",
+            margin={"t":50,"b":20,"l":10,"r":10}, showlegend=False,
+        )
+        st.plotly_chart(sc_fig, use_container_width=True)
+
         # ── Top 10 Value Picks ────────────────────────────────
-        st.markdown("#### 🏆 Top 10 Value Opportunities")
-        top10 = df_filt.head(10)
+        st.markdown("#### 🏆 Top Value Picks")
+        if df_filt.empty:
+            st.info("No stocks match your current filters. Try selecting 'All stocks'.")
+        else:
+            top10 = df_filt.head(10)
+            for _, row in top10.iterrows():
+                signal = row.get("Signal","")
+                emoji  = row.get("Signal Emoji","")
+                score  = int(row.get("Score", 0))
+                graham = row.get("Graham No.")
+                roe    = row.get("ROE (%)")
+                pe     = row.get("P/E")
+                mos    = row.get("MoS %", 0)
 
-        for _, row in top10.iterrows():
-            signal = row.get("Signal","")
-            emoji  = row.get("Signal Emoji","")
-            score  = row.get("Score", 0)
-            mos    = row.get("MoS %", 0)
-
-            with st.container():
-                cc1, cc2, cc3, cc4, cc5 = st.columns([2, 1, 1, 1, 0.5])
-                with cc1:
-                    st.markdown(f"**{int(row['Rank'])}. {row['Company']}** `{row['Ticker']}`")
-                    st.caption(row.get("Explanation", "")[:120] + "…")
-                with cc2:
-                    st.metric("Price", _fmt(row["Price (₹)"]))
-                with cc3:
-                    st.metric("Graham No.", _fmt(row.get("Graham No.")))
-                with cc4:
-                    st.metric("Score", f"{score}/100")
-                with cc5:
-                    st.markdown(f"<br>{emoji} **{signal}**", unsafe_allow_html=True)
-            st.divider()
+                with st.container():
+                    cc1, cc2, cc3, cc4, cc5, cc6 = st.columns([2.2, 1, 1, 1, 1, 0.9])
+                    with cc1:
+                        st.markdown(f"**{int(row['Rank'])}. {row['Company']}**  \n`{row['Ticker']}`")
+                        expl = row.get("Explanation","")
+                        st.caption(expl[:130] + ("…" if len(expl) > 130 else ""))
+                    with cc2:
+                        st.metric("Price", _fmt(row["Price (₹)"]))
+                    with cc3:
+                        g_label = _fmt(graham) if graham else "N/A"
+                        mos_str = f"{mos:+.1f}% vs Graham" if graham else ""
+                        st.metric("Fair Value", g_label, delta=mos_str if mos_str else None,
+                                  delta_color="normal" if mos >= 0 else "inverse")
+                    with cc4:
+                        st.metric("ROE",  f"{roe:.1f}%" if roe is not None else "N/A")
+                        st.metric("P/E",  f"{pe:.1f}×" if pe is not None else "N/A")
+                    with cc5:
+                        st.metric("Score", f"{score}/100")
+                        st.markdown(f"{emoji} **{signal}**")
+                    with cc6:
+                        # "Analyse" button — loads this stock in the Deep Analysis tab
+                        if st.button("📈 Deep Dive", key=f"dd_{row['Ticker']}", use_container_width=True,
+                                     help="Load this stock in the Deep Analysis tab"):
+                            st.session_state.analysis_ticker = row["Ticker"]
+                            st.toast(f"✅ {row['Company']} loaded — switch to the 📈 Deep Analysis tab!", icon="✅")
+                st.divider()
 
         # ── Full ranked table ─────────────────────────────────
-        st.markdown("#### 📋 Full Screener Results")
-
+        st.markdown("#### 📋 Full Results Table")
         display_cols = [
             "Rank","Ticker","Company","Price (₹)","Graham No.",
             "MoS %","ROE (%)","P/E","D/E","Score","Signal","Data Quality"
         ]
         display_df = df_filt[[c for c in display_cols if c in df_filt.columns]].copy()
-
-        # Signal count summary chart
-        sig_counts = df_all["Signal"].value_counts()
-        sig_colors = {
-            "STRONG BUY": "#16a34a", "BUY": "#4ade80",
-            "HOLD": "#ca8a04", "AVOID": "#dc2626"
-        }
-        sc_fig = go.Figure(go.Bar(
-            x=sig_counts.index.tolist(),
-            y=sig_counts.values.tolist(),
-            marker_color=[sig_colors.get(s,"#94a3b8") for s in sig_counts.index],
-            text=sig_counts.values.tolist(), textposition="outside",
-        ))
-        sc_fig.update_layout(
-            title="Signal Distribution", height=260,
-            yaxis_title="# Stocks",
-            margin={"t": 50, "b": 20, "l": 10, "r": 10}, showlegend=False,
-        )
-        st.plotly_chart(sc_fig, use_container_width=True)
-
         st.dataframe(display_df, use_container_width=True, hide_index=True)
 
+        # ── Quick stock opener ────────────────────────────────
+        st.markdown("")
+        qa, qb = st.columns([3, 1])
+        with qa:
+            quick_pick = st.selectbox(
+                "🔍 Select any stock from the list to open its full analysis",
+                ["— pick a stock —"] + df_filt["Company"].tolist(),
+                label_visibility="visible",
+            )
+        with qb:
+            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+            if st.button("📈 Open Analysis", type="primary", use_container_width=True):
+                if quick_pick != "— pick a stock —":
+                    match = df_filt[df_filt["Company"] == quick_pick]
+                    if not match.empty:
+                        st.session_state.analysis_ticker = match.iloc[0]["Ticker"]
+                        st.toast(f"✅ {quick_pick} loaded — switch to the 📈 Deep Analysis tab!", icon="✅")
+                else:
+                    st.warning("Pick a stock first.")
+
         # ── Export ────────────────────────────────────────────
-        csv_str = screener_to_csv(df_filt)
+        st.markdown("")
         st.download_button(
-            "⬇️ Download Screener Results (CSV)",
-            data=csv_str, file_name="screener_results.csv", mime="text/csv",
+            "⬇️ Download Results as CSV",
+            data=screener_to_csv(df_filt),
+            file_name="alphaforge_screener.csv",
+            mime="text/csv",
+            help="Opens in Excel or Google Sheets",
         )
 
-        # ── Add to portfolio shortcut ─────────────────────────
+        # ── Add to portfolio ──────────────────────────────────
         st.markdown("")
-        st.markdown("#### ➕ Add to Portfolio")
+        st.markdown("#### ➕ Add to Portfolio Builder")
         add_labels = st.multiselect(
-            "Select stocks to add to Portfolio Builder",
+            "Select stocks to add to your portfolio",
             options=df_filt["Company"].tolist(),
-            help="Stocks added here will appear pre-selected in the Portfolio tab.",
+            help="Stocks you pick here will appear in the Portfolio Builder tab.",
         )
-        if add_labels and st.button("Add Selected to Portfolio", type="secondary"):
+        if add_labels and st.button("Add to Portfolio →", type="secondary"):
             existing = {r["Company"] for r in st.session_state.portfolio_rows}
+            added = 0
             for lbl in add_labels:
                 match = df_filt[df_filt["Company"] == lbl]
-                if not match.empty:
-                    row_dict = match.iloc[0].to_dict()
-                    if row_dict["Company"] not in existing:
-                        st.session_state.portfolio_rows.append(row_dict)
-                        existing.add(row_dict["Company"])
-            st.success(f"Added {len(add_labels)} stock(s) to your portfolio.")
+                if not match.empty and lbl not in existing:
+                    st.session_state.portfolio_rows.append(match.iloc[0].to_dict())
+                    existing.add(lbl)
+                    added += 1
+            st.success(f"Added {added} stock(s) to your Portfolio. Switch to the 💼 Portfolio Builder tab.")
     else:
-        st.info("Click **Run Screener** to analyse all stocks and generate a ranked list.")
+        st.info("👆 Click **Run Screener** above to analyse all stocks and see ranked results.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
