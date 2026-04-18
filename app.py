@@ -29,8 +29,8 @@ from portfolio import build_portfolio, compute_portfolio_metrics, portfolio_to_c
 # PAGE CONFIG  (must be first Streamlit call)
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="ALPHAFORGE",
-    page_icon="⚡",
+    page_title="KAIROFORGE",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -191,10 +191,10 @@ if "analysis_ticker" not in st.session_state: st.session_state.analysis_ticker =
 # ─────────────────────────────────────────────────────────────────────────────
 logo_col, title_col = st.columns([1, 4])
 with logo_col:
-    st.image("logo.jpg", width=140)
+    st.image("logo.png", width=140)
 with title_col:
     st.markdown("<div style='padding-top:18px'>", unsafe_allow_html=True)
-    st.markdown("# ALPHAFORGE")
+    st.markdown("# KAIROFORGE")
     st.markdown(
         "<span style='color:#94a3b8;font-size:1rem'>"
         "Institutional-Grade Equity Research — Indian Markets (NSE)</span>",
@@ -819,4 +819,11 @@ st.caption(
     "⚠️ **Disclaimer:** For educational purposes only — not financial advice.  "
     "All valuations are model-based estimates. Consult a qualified financial adviser "
     "before making any investment decisions."
+)
+st.markdown(
+    "<div style='text-align:center;color:#64748b;font-size:0.82rem;padding-top:8px'>"
+    "Created by <strong>Dhruv Vaniawala</strong> · "
+    "<a href='mailto:uwddhruv@gmail.com' style='color:#64748b'>uwddhruv@gmail.com</a>"
+    "</div>",
+    unsafe_allow_html=True,
 )
