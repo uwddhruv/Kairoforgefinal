@@ -35,209 +35,98 @@ st.set_page_config(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CSS — dark financial terminal theme
+# CSS — dark financial terminal theme (safe, visible overrides only)
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-
-/* ── Global font & background ─────────────────────────────── */
-html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif !important;
-}
-.stApp {
-    background: linear-gradient(160deg, #080d1a 0%, #0a1020 55%, #06101e 100%) !important;
-}
-
-/* ── Sidebar ─────────────────────────────────────────────── */
-[data-testid="stSidebar"] {
-    background: rgba(6, 12, 26, 0.97) !important;
-    border-right: 1px solid rgba(59,130,246,0.18) !important;
-}
-[data-testid="stSidebar"] .stRadio label {
-    color: #94a3b8 !important;
-    font-size: 0.95rem !important;
-    font-weight: 500 !important;
-    padding: 6px 0 !important;
-    transition: color .2s;
-}
-[data-testid="stSidebar"] .stRadio label:hover { color: #e2e8f0 !important; }
-
-/* ── Headings ─────────────────────────────────────────────── */
-h1 {
-    font-weight: 800 !important;
-    background: linear-gradient(135deg, #ffffff 0%, #93c5fd 100%);
-    -webkit-background-clip: text !important;
-    -webkit-text-fill-color: transparent !important;
-    background-clip: text !important;
-    letter-spacing: -0.02em !important;
-}
-h2, h3 { color: #e2e8f0 !important; font-weight: 700 !important; }
-h4      { color: #cbd5e1 !important; font-weight: 600 !important; }
-
-/* ── Metric cards ─────────────────────────────────────────── */
-[data-testid="metric-container"] {
-    background: rgba(15, 23, 42, 0.85) !important;
-    border: 1px solid rgba(59,130,246,0.2) !important;
-    border-radius: 12px !important;
-    padding: 14px 18px !important;
-    backdrop-filter: blur(12px) !important;
-}
-[data-testid="metric-container"] label {
-    color: #64748b !important;
-    font-size: 0.78rem !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.06em !important;
-    font-weight: 600 !important;
-}
-[data-testid="metric-container"] [data-testid="stMetricValue"] {
-    color: #f1f5f9 !important;
-    font-size: 1.4rem !important;
-    font-weight: 700 !important;
-}
 
 /* ── Buttons ──────────────────────────────────────────────── */
 .stButton > button {
     background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%) !important;
-    color: #fff !important;
+    color: #ffffff !important;
     border: none !important;
     border-radius: 8px !important;
     font-weight: 600 !important;
-    font-family: 'Inter', sans-serif !important;
-    letter-spacing: 0.01em !important;
-    transition: all .2s !important;
+    transition: box-shadow .2s, transform .15s !important;
 }
 .stButton > button:hover {
-    background: linear-gradient(135deg, #2563eb 0%, #60a5fa 100%) !important;
-    box-shadow: 0 6px 20px rgba(59,130,246,0.45) !important;
+    box-shadow: 0 6px 20px rgba(59,130,246,0.5) !important;
     transform: translateY(-1px) !important;
 }
-button[kind="secondary"] {
-    background: rgba(30,41,59,0.8) !important;
-    border: 1px solid rgba(59,130,246,0.3) !important;
-    color: #93c5fd !important;
+
+/* ── Metric cards ─────────────────────────────────────────── */
+[data-testid="metric-container"] {
+    border: 1px solid rgba(59,130,246,0.25) !important;
+    border-radius: 12px !important;
+    padding: 14px 18px !important;
 }
 
 /* ── Tabs ─────────────────────────────────────────────────── */
-.stTabs [data-baseweb="tab-list"] {
-    background: rgba(15,23,42,0.8) !important;
-    border-radius: 10px !important;
-    padding: 4px !important;
-    gap: 2px !important;
-    border: 1px solid rgba(59,130,246,0.12) !important;
-}
-.stTabs [data-baseweb="tab"] {
-    border-radius: 7px !important;
-    color: #64748b !important;
-    font-weight: 500 !important;
-    padding: 6px 16px !important;
-}
 .stTabs [aria-selected="true"] {
     background: linear-gradient(135deg, #1d4ed8, #3b82f6) !important;
     color: #fff !important;
+    border-radius: 6px !important;
     font-weight: 600 !important;
 }
 
-/* ── Inputs / Selectbox ───────────────────────────────────── */
-.stTextInput input, .stNumberInput input {
-    background: rgba(15,23,42,0.9) !important;
-    color: #e2e8f0 !important;
-    border: 1px solid rgba(59,130,246,0.3) !important;
-    border-radius: 8px !important;
-}
-.stSelectbox > div > div {
-    background: rgba(15,23,42,0.9) !important;
-    border: 1px solid rgba(59,130,246,0.3) !important;
-    border-radius: 8px !important;
-    color: #e2e8f0 !important;
-}
-.stMultiSelect > div > div {
-    background: rgba(15,23,42,0.9) !important;
-    border: 1px solid rgba(59,130,246,0.3) !important;
-    border-radius: 8px !important;
-}
-
-/* ── Expanders ────────────────────────────────────────────── */
-[data-testid="stExpander"] {
-    background: rgba(15,23,42,0.7) !important;
-    border: 1px solid rgba(59,130,246,0.15) !important;
-    border-radius: 10px !important;
-}
-[data-testid="stExpander"] summary { color: #93c5fd !important; font-weight: 500 !important; }
-
-/* ── Progress bar ─────────────────────────────────────────── */
-.stProgress > div > div > div > div {
-    background: linear-gradient(90deg, #1d4ed8, #06b6d4) !important;
-    border-radius: 4px !important;
-}
-
-/* ── Alerts ───────────────────────────────────────────────── */
-.stSuccess { background: rgba(22,163,74,0.1) !important; border: 1px solid rgba(22,163,74,0.3) !important; border-radius: 10px !important; color: #4ade80 !important; }
-.stError   { background: rgba(220,38,38,0.1) !important; border: 1px solid rgba(220,38,38,0.3) !important; border-radius: 10px !important; }
-.stWarning { background: rgba(202,138,4,0.1) !important; border: 1px solid rgba(202,138,4,0.3) !important; border-radius: 10px !important; }
-.stInfo    { background: rgba(59,130,246,0.1) !important; border: 1px solid rgba(59,130,246,0.3) !important; border-radius: 10px !important; color: #93c5fd !important; }
-
 /* ── Divider ──────────────────────────────────────────────── */
-hr { border-color: rgba(59,130,246,0.15) !important; }
+hr { border-color: rgba(59,130,246,0.2) !important; }
 
-/* ── Glass card ───────────────────────────────────────────── */
+/* ── Glass card (used for hero + info boxes) ──────────────── */
 .glass-card {
-    background: rgba(15,23,42,0.7);
-    border: 1px solid rgba(59,130,246,0.18);
+    background: rgba(30,41,59,0.6);
+    border: 1px solid rgba(59,130,246,0.22);
     border-radius: 14px;
     padding: 20px 24px;
-    backdrop-filter: blur(12px);
     margin-bottom: 12px;
+    color: #e2e8f0;
 }
 
 /* ── Hero card ────────────────────────────────────────────── */
 .hero-card {
-    background: linear-gradient(135deg, rgba(29,78,216,0.15) 0%, rgba(15,23,42,0.9) 100%);
-    border: 1px solid rgba(59,130,246,0.3);
+    background: rgba(29,78,216,0.12);
+    border: 1px solid rgba(59,130,246,0.35);
     border-radius: 16px;
     padding: 24px 28px;
-    backdrop-filter: blur(16px);
     margin-bottom: 20px;
+    color: #e2e8f0;
 }
 
 /* ── Screener table ───────────────────────────────────────── */
-.scr-wrap { overflow-x:auto; border-radius:12px; border:1px solid rgba(59,130,246,0.15); margin-top:8px; }
+.scr-wrap { overflow-x:auto; border-radius:12px; border:1px solid rgba(59,130,246,0.18); margin-top:8px; }
 .scr-table { width:100%; border-collapse:collapse; font-size:.875rem; }
-.scr-table thead tr { background:rgba(7,12,26,0.95); }
+.scr-table thead tr { background:rgba(15,23,42,0.95); }
 .scr-table th {
-    padding:10px 14px; text-align:left; color:#475569;
+    padding:10px 14px; text-align:left; color:#94a3b8;
     text-transform:uppercase; font-size:.7rem; letter-spacing:.07em; font-weight:600;
-    border-bottom:1px solid rgba(59,130,246,0.12);
-    white-space:nowrap;
+    border-bottom:1px solid rgba(59,130,246,0.15); white-space:nowrap;
 }
-.scr-table td { padding:9px 14px; border-bottom:1px solid rgba(30,41,59,0.6); color:#cbd5e1; white-space:nowrap; }
-.scr-table tbody tr { transition:background .15s; }
-.scr-table tbody tr:hover { background:rgba(59,130,246,0.07) !important; }
+.scr-table td { padding:9px 14px; border-bottom:1px solid rgba(59,130,246,0.07); color:#cbd5e1; white-space:nowrap; }
+.scr-table tbody tr:hover { background:rgba(59,130,246,0.08) !important; }
 
 /* signal badges */
 .badge { padding:3px 10px; border-radius:20px; font-size:.72rem; font-weight:700; display:inline-block; }
-.b-sb  { background:rgba(22,163,74,.2);   color:#4ade80; border:1px solid #16a34a; }
-.b-b   { background:rgba(74,222,128,.12); color:#86efac; border:1px solid rgba(74,222,128,.4); }
-.b-h   { background:rgba(202,138,4,.18);  color:#fbbf24; border:1px solid #ca8a04; }
-.b-av  { background:rgba(220,38,38,.18);  color:#f87171; border:1px solid #dc2626; }
+.b-sb  { background:rgba(22,163,74,.22);   color:#4ade80; border:1px solid #16a34a; }
+.b-b   { background:rgba(74,222,128,.14);  color:#86efac; border:1px solid rgba(74,222,128,.5); }
+.b-h   { background:rgba(202,138,4,.2);    color:#fbbf24; border:1px solid #ca8a04; }
+.b-av  { background:rgba(220,38,38,.2);    color:#f87171; border:1px solid #dc2626; }
 
-/* ── KPI tile ─────────────────────────────────────────────── */
+/* ── KPI tiles ────────────────────────────────────────────── */
 .kpi-row { display:flex; gap:12px; flex-wrap:wrap; margin:12px 0; }
 .kpi-tile {
-    flex:1; min-width:130px;
-    background:rgba(15,23,42,0.8);
-    border:1px solid rgba(59,130,246,0.18);
-    border-radius:12px; padding:14px 16px;
-    backdrop-filter:blur(10px);
+    flex:1; min-width:140px;
+    background: rgba(30,41,59,0.55);
+    border: 1px solid rgba(59,130,246,0.2);
+    border-radius: 12px; padding:14px 16px;
 }
-.kpi-label { color:#475569; font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; font-weight:600; margin-bottom:4px; }
-.kpi-value { font-size:1.3rem; font-weight:700; color:#f1f5f9; }
-.kpi-help  { color:#334155; font-size:.7rem; margin-top:3px; }
+.kpi-label { color:#94a3b8; font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; font-weight:600; margin-bottom:6px; }
+.kpi-value { font-size:1.25rem; font-weight:700; }
+.kpi-help  { color:#475569; font-size:.7rem; margin-top:4px; }
 
 /* ── Scrollbar ────────────────────────────────────────────── */
-::-webkit-scrollbar { width:6px; height:6px; }
-::-webkit-scrollbar-track { background:rgba(15,23,42,.5); }
-::-webkit-scrollbar-thumb { background:rgba(59,130,246,.4); border-radius:4px; }
+::-webkit-scrollbar { width:5px; height:5px; }
+::-webkit-scrollbar-track { background:rgba(15,23,42,.4); }
+::-webkit-scrollbar-thumb { background:rgba(59,130,246,.5); border-radius:4px; }
 
 </style>
 """, unsafe_allow_html=True)
