@@ -303,8 +303,7 @@ def make_sensitivity_heatmap(df, current_price):
         xaxis_title="Terminal Growth Rate", yaxis_title="WACC",
         xaxis={"tickfont": {"color": "#94a3b8"}},
         yaxis={"tickfont": {"color": "#94a3b8"}},
-        height=395, **_DARK_LAYOUT,
-        margin=dict(t=60, b=45, l=80, r=20),
+        height=395, **{**_DARK_LAYOUT, "margin": dict(t=60, b=45, l=80, r=20)},
     )
     return fig
 
