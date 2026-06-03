@@ -4,8 +4,7 @@ Institutional-Grade Equity Research Terminal for Indian Markets (NSE).
 
 Navigation (sidebar):
   📊 Screener       — Ranked stock screener with live Value Opportunity Scores
-  📈 Stock Analysis — Graham Number · 3-Stage DCF · Ratios · Sensitivity
-  💼 Portfolio      — Equal-weight portfolio builder with risk metrics
+  📈 Stock Analysis — Graham Number · 3-Stage DCF · Ratios · Sensitivity · Price Target
 """
 
 import math
@@ -20,7 +19,7 @@ from valuation_models import (
     estimate_wacc, calculate_dcf, run_sensitivity,
 )
 from screener  import run_screener, generate_signal, score_stock as _score_stock
-from portfolio import build_portfolio, compute_portfolio_metrics, portfolio_to_csv, screener_to_csv
+from screener import screener_to_csv
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -136,7 +135,6 @@ hr { border-color: rgba(59,130,246,0.2) !important; }
 # SESSION STATE DEFAULTS
 # ─────────────────────────────────────────────────────────────────────────────
 if "screener_df"     not in st.session_state: st.session_state.screener_df     = None
-if "portfolio_rows"  not in st.session_state: st.session_state.portfolio_rows  = []
 if "analysis_ticker" not in st.session_state: st.session_state.analysis_ticker = None
 
 
@@ -149,7 +147,7 @@ with st.sidebar:
 
     page = st.radio(
         "Navigation",
-        ["📊  Screener", "📈  Stock Analysis", "💼  Portfolio Builder"],
+        ["📊  Screener", "📈  Stock Analysis"],
         label_visibility="collapsed",
     )
 
@@ -865,18 +863,8 @@ display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap
         st.download_button("⬇️ Download Results (CSV)", data=screener_to_csv(df_filt),
                            file_name="kairoforge_screener.csv", mime="text/csv")
     with ex2:
-        add_labels = st.multiselect("Add to Portfolio →",
-                                    options=df_filt["Company"].tolist(),
-                                    placeholder="Select stocks…")
-        if add_labels and st.button("➕ Add to Portfolio", type="secondary"):
-            existing = {r["Company"] for r in st.session_state.portfolio_rows}
-            added = 0
-            for lbl in add_labels:
-                m = df_filt[df_filt["Company"] == lbl]
-                if not m.empty and lbl not in existing:
-                    st.session_state.portfolio_rows.append(m.iloc[0].to_dict())
-                    existing.add(lbl); added += 1
-            st.success(f"Added {added} stock(s). Switch to 💼 Portfolio Builder.")
+        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+        st.caption(f"{len(df_filt)} result(s) visible. Run screener for more.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -974,9 +962,9 @@ def render_analysis():
     )
 
     # Sub-tabs
-    ov, val, dcf_tab, sens, news_tab, peer_tab = st.tabs([
+    ov, val, dcf_tab, sens, pt_tab, news_tab, peer_tab = st.tabs([
         "🏠 Overview", "📐 Valuation", "💹 DCF Model",
-        "🔬 Sensitivity", "📰 News & Sentiment", "🔄 Peer Comparison"
+        "🔬 Sensitivity", "🎯 Price Target", "📰 News & Sentiment", "🔄 Peer Comparison"
     ])
 
     # ── OVERVIEW ──────────────────────────────────────────────
@@ -1206,6 +1194,163 @@ def render_analysis():
             for c in fmt_df.columns:
                 fmt_df[c] = fmt_df[c].apply(lambda v: f"₹{v:,.0f}" if pd.notna(v) else "—")
             st.dataframe(fmt_df, use_container_width=True)
+
+    # ── PRICE TARGET ───────────────────────────────────────────
+    with pt_tab:
+        st.markdown("#### 🎯 Price Target")
+        st.caption("Bull · Base · Bear scenarios derived from the DCF model.")
+
+        _dcf_res = st.session_state.get("_dcf_res")
+        _dcf_prm = st.session_state.get("_dcf_params")
+
+        if _dcf_res is None or _dcf_prm is None:
+            st.info("Open the **3-Stage DCF** tab first, click **Compute DCF Valuation**, then return here.")
+        elif not _dcf_res:
+            st.warning("DCF returned no result. Check WACC vs terminal growth.")
+        else:
+            base_iv = _dcf_res.get("intrinsic_value", 0)
+            _fcf_in = _dcf_prm.get("fcf_in", 0)
+            _g1 = _dcf_prm.get("g1", 0)
+            _yr1 = _dcf_prm.get("yr1", 0)
+            _g2 = _dcf_prm.get("g2", 0)
+            _yr2 = _dcf_prm.get("yr2", 0)
+            _wp = _dcf_prm.get("wp", 0)
+            _base_w = _wp / 100
+
+            # Bull case: lower WACC + higher terminal growth
+            bull_g = min(0.045, _g2 + 0.02)
+            bull_w = max(0.07, _base_w - 0.02)
+            bull_res = calculate_dcf(_fcf_in, _g1, _yr1, _g2, _yr2, bull_g, bull_w)
+            bull_iv = bull_res.get("intrinsic_value", base_iv)
+
+            # Bear case: higher WACC + lower terminal growth
+            bear_g = max(0.01, _g2 - 0.02)
+            bear_w = min(0.18, _base_w + 0.02)
+            bear_res = calculate_dcf(_fcf_in, _g1, _yr1, _g2, _yr2, bear_g, bear_w)
+            bear_iv = bear_res.get("intrinsic_value", base_iv)
+
+            # Ensure ordering: bear ≤ base ≤ bull
+            bear_iv = min(bear_iv, base_iv)
+            bull_iv = max(bull_iv, base_iv)
+            _price = _dcf_prm.get("price", 0)
+
+            # ── KPI tiles ──
+            if _price and _price > 0:
+                b_up = (bull_iv - _price) / _price * 100
+                b_dn = (bear_iv - _price) / _price * 100
+                b_up_c = "#22c55e" if b_up > 0 else "#ef4444"
+                b_dn_c = "#22c55e" if b_dn > 0 else "#ef4444"
+                bull_lbl = f"🟢 ₹{bull_iv:,.0f} (+{b_up:.1f}% vs price)"
+                bear_lbl = f"🔴 ₹{bear_iv:,.0f} ({b_dn:+.1f}% vs price)"
+                base_lbl = f"⚪ ₹{base_iv:,.0f}"
+                target_val = f"{((bull_iv + bear_iv) / 2 / _price - 1) * 100:+.1f}%"
+                target_c = "#22c55e" if b_up + b_dn > 0 else "#ef4444"
+            else:
+                bull_lbl = f"🟢 ₹{bull_iv:,.0f}"
+                bear_lbl = f"🔴 ₹{bear_iv:,.0f}"
+                base_lbl = f"⚪ ₹{base_iv:,.0f}"
+                target_val = "N/A"
+                target_c = "#94a3b8"
+
+            kpi_tiles([
+                {"label": "Bull Case",  "value": bull_lbl,
+                 "help": f"WACC {bull_w*100:.1f}% | Terminal {bull_g*100:.1f}%", "color": "#16a34a"},
+                {"label": "Base Case",  "value": base_lbl,
+                 "help": f"WACC {_base_w*100:.1f}% | Terminal {_g2*100:.1f}%", "color": "#3b82f6"},
+                {"label": "Bear Case",  "value": bear_lbl,
+                 "help": f"WACC {bear_w*100:.1f}% | Terminal {bear_g*100:.1f}%", "color": "#dc2626"},
+                {"label": "Implied Upside", "value": target_val,
+                 "help": "Midpoint of range vs current price", "color": target_c},
+            ])
+
+            # ── Price Target Range Bar ──
+            if _price and _price > 0:
+                span = bull_iv - bear_iv
+                if span > 0:
+                    _base_pct = (base_iv - bear_iv) / span
+                    _price_pct = max(0, min(1, (_price - bear_iv) / span))
+
+                    st.markdown("")
+                    st.markdown(f"""
+<div style="position:relative;height:42px;background:#0f172a;border-radius:8px;border:1px solid rgba(59,130,246,0.2);overflow:hidden">
+  <div style="position:absolute;left:0;right:0;top:0;height:100%;background:linear-gradient(90deg, rgba(220,38,38,.25) 0%, rgba(59,130,246,.2) {_base_pct*100}%, rgba(22,163,74,.25) 100%)"></div>
+  <div style="position:absolute;left:{_base_pct*100}%;top:0;bottom:0;width:2px;background:#3b82f6;transform:translateX(-1px)"></div>
+  <div style="position:absolute;left:{_price_pct*100}%;top:0;bottom:0;width:3px;background:#fff;transform:translateX(-1.5px)"></div>
+  <div style="position:absolute;bottom:4px;left:8px;font-size:10px;color:#f87171;font-weight:700">Bear ₹{bear_iv:,.0f}</div>
+  <div style="position:absolute;bottom:4px;left:50%;transform:translateX(-50%);font-size:10px;color:#93c5fd;font-weight:700">Base ₹{base_iv:,.0f}</div>
+  <div style="position:absolute;bottom:4px;right:8px;font-size:10px;color:#4ade80;font-weight:700">Bull ₹{bull_iv:,.0f}</div>
+</div>
+<div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:6px">
+  White marker = Current Price (₹{_price:,.2f}) &nbsp;·&nbsp; Blue line = Base Case
+</div>""", unsafe_allow_html=True)
+
+                    # Verdict text
+                    if _price < bear_iv:
+                        verdict = "Price sits below the bear case — deep value if assumptions hold."
+                        vcol = "#22c55e"
+                    elif _price < base_iv:
+                        verdict = "Price sits between bear and base cases — modest value opportunity."
+                        vcol = "#4ade80"
+                    elif _price <= bull_iv:
+                        verdict = "Price sits between base and bull cases — near fair value."
+                        vcol = "#fbbf24"
+                    else:
+                        verdict = "Price sits above the bull case — overvalued on DCF assumptions."
+                        vcol = "#ef4444"
+
+                    st.markdown(f"""
+<div style="margin-top:8px;padding:12px;border-radius:8px;background:rgba(15,23,42,0.6);border:1px solid rgba(59,130,246,0.1);">
+  <strong style="color:{vcol}">{verdict}</strong>
+</div>""", unsafe_allow_html=True)
+
+                    # ── Scenario table ──
+                    st.markdown("")
+                    st.markdown("##### Scenario Breakdown")
+                    scenario_rows = []
+                    for lbl, iv, w, g in [
+                        ("Bull", bull_iv, bull_w, bull_g),
+                        ("Base", base_iv, _base_w, _g2),
+                        ("Bear", bear_iv, bear_w, bear_g),
+                    ]:
+                        if _price and _price > 0:
+                            ups = (iv - _price) / _price * 100
+                            ups_s = f"+{ups:.1f}%" if ups > 0 else f"{ups:.1f}%"
+                        else:
+                            ups_s = "N/A"
+                        scenario_rows.append({
+                            "Scenario": lbl,
+                            "Intrinsic Value": f"₹{iv:,.0f}",
+                            "vs Price": ups_s,
+                            "WACC": f"{w*100:.1f}%",
+                            "Terminal Growth": f"{g*100:.1f}%",
+                        })
+                    st.dataframe(pd.DataFrame(scenario_rows), use_container_width=True, hide_index=True)
+
+                    # ── Bull / Base / Bear waterfall chart ──
+                    pt_fig = go.Figure()
+                    pt_fig.add_trace(go.Bar(
+                        name="", x=["Bear", "Base", "Bull"],
+                        y=[bear_iv, base_iv, bull_iv],
+                        marker_color=["#dc2626", "#3b82f6", "#16a34a"],
+                        text=[f"₹{bear_iv:,.0f}", f"₹{base_iv:,.0f}", f"₹{bull_iv:,.0f}"],
+                        textposition="outside",
+                        textfont={"color": "#e2e8f0", "size": 12},
+                    ))
+                    if _price and _price > 0:
+                        pt_fig.add_hline(y=_price, line_dash="dash", line_color="#f1f5f9",
+                                         annotation_text=f"Current Price ₹{_price:,.0f}",
+                                         annotation_position="right",
+                                         annotation_font_color="#f1f5f9")
+                    pt_fig.update_layout(
+                        title=dict(text="Price Target Range", font={"size": 12}),
+                        yaxis={"gridcolor": "rgba(59,130,246,0.08)", "title": "Intrinsic Value (₹)"},
+                        height=320, showlegend=False, **_DARK_LAYOUT,
+                    )
+                    st.plotly_chart(pt_fig, use_container_width=True)
+                else:
+                    st.warning("Bear and Bull cases are identical — assumptions are too narrow.")
+            else:
+                st.warning("Current price unavailable — cannot show target range.")
 
     # ── NEWS & SENTIMENT ───────────────────────────────────────
     with news_tab:
@@ -1539,125 +1684,11 @@ padding:12px 16px;margin-bottom:8px">
                 st.plotly_chart(scat_fig, use_container_width=True)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# PAGE: PORTFOLIO BUILDER
-# ═══════════════════════════════════════════════════════════════════════════
-def render_portfolio():
-    page_header("💼 Portfolio Builder", "Simulate an equal-weight portfolio from your screener picks.")
-
-    if st.session_state.screener_df is not None:
-        df_scr = st.session_state.screener_df
-        in_port = {r["Company"] for r in st.session_state.portfolio_rows}
-        avail   = [n for n in df_scr["Company"].tolist() if n not in in_port]
-
-        pa, pb = st.columns([3, 1])
-        with pa:
-            manual_add = st.multiselect("Add stocks from screener", options=avail,
-                                        placeholder="Search and select…", max_selections=10)
-        with pb:
-            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-            if st.button("➕ Add", type="primary", use_container_width=True) and manual_add:
-                for lbl in manual_add:
-                    m = df_scr[df_scr["Company"] == lbl]
-                    if not m.empty and lbl not in in_port:
-                        st.session_state.portfolio_rows.append(m.iloc[0].to_dict())
-                        in_port.add(lbl)
-                st.rerun()
-    else:
-        st.info("Run the **📊 Screener** first to enable stock selection.")
-
-    if st.session_state.portfolio_rows:
-        to_remove = st.multiselect("Remove stocks", [r["Company"] for r in st.session_state.portfolio_rows])
-        if to_remove and st.button("🗑️ Remove", type="secondary"):
-            st.session_state.portfolio_rows = [r for r in st.session_state.portfolio_rows
-                                               if r["Company"] not in to_remove]
-            st.rerun()
-
-    if not st.session_state.portfolio_rows:
-        st.markdown("""
-<div class="glass-card" style="text-align:center;padding:40px">
-  <div style="font-size:2.5rem">💼</div>
-  <div style="color:#475569;margin-top:8px">Your portfolio is empty.<br>Run the Screener, then add stocks here to build a hypothetical portfolio.</div>
-</div>""", unsafe_allow_html=True)
-        return
-
-    port_df = build_portfolio(st.session_state.portfolio_rows)
-    metrics = compute_portfolio_metrics(port_df)
-
-    risk_color = {"LOW": "#22c55e", "MEDIUM": "#fbbf24", "HIGH": "#ef4444"}.get(
-        metrics.get("risk_level","MEDIUM"), "#94a3b8")
-
-    kpi_tiles([
-        {"label":"Holdings",        "value":metrics["n_stocks"],              "color":"#f1f5f9"},
-        {"label":"Avg Value Score", "value":f"{metrics['avg_score']:.0f}/100","color":"#93c5fd"},
-        {"label":"Avg Margin of Safety","value":f"{metrics['avg_mos']:+.1f}%",
-         "help":"ℹ️ How far below fair value on average",
-         "color":"#22c55e" if metrics['avg_mos']>0 else "#ef4444"},
-        {"label":"Avg Beta",        "value":f"{metrics['avg_beta']:.2f}",
-         "help":"ℹ️ Portfolio volatility vs market","color":"#fbbf24"},
-        {"label":"Portfolio Risk",  "value":metrics.get("risk_level","—"),   "color":risk_color},
-        {"label":"Avg Data Quality","value":f"{int(metrics.get('avg_data_quality',0))}/100","color":"#94a3b8"},
-    ])
-
-    # Holdings table
-    st.markdown("#### Holdings")
-    disp = ["Ticker","Company","Price (₹)","Weight (%)","Score","Signal","MoS (%)","ROE (%)","Beta"]
-    st.dataframe(port_df[[c for c in disp if c in port_df.columns]],
-                 use_container_width=True, hide_index=True)
-
-    # Charts
-    pie_col, bar_col = st.columns(2)
-    with pie_col:
-        pie = go.Figure(go.Pie(
-            labels=port_df["Company"].str[:22].tolist(),
-            values=port_df["Weight (%)"].tolist(),
-            hole=0.5, textinfo="label+percent",
-            textfont={"size": 11},
-            marker={"line": {"color": "rgba(0,0,0,0)", "width": 0}},
-        ))
-        pie.update_layout(title="Allocation", height=330, showlegend=False, **_DARK_LAYOUT)
-        st.plotly_chart(pie, use_container_width=True)
-
-    with bar_col:
-        sig_c = {"STRONG BUY":"#16a34a","BUY":"#4ade80","HOLD":"#ca8a04","AVOID":"#dc2626"}
-        sc_b  = go.Figure(go.Bar(
-            x=port_df["Company"].str[:20].tolist(),
-            y=port_df["Score"].tolist(),
-            marker_color=[sig_c.get(s,"#94a3b8") for s in port_df["Signal"].tolist()],
-            text=port_df["Score"].tolist(), textposition="outside",
-            textfont={"color":"#e2e8f0"},
-        ))
-        sc_b.update_layout(title="Value Score by Holding", height=330, yaxis_range=[0,115],
-                           yaxis={"gridcolor":"rgba(59,130,246,0.08)"},
-                           xaxis_tickangle=-30, **_DARK_LAYOUT)
-        st.plotly_chart(sc_b, use_container_width=True)
-
-    # Signal count
-    sc_c = metrics.get("signal_counts",{})
-    if sc_c:
-        emoji_m = {"STRONG BUY":"🟢","BUY":"🟩","HOLD":"🟡","AVOID":"🔴"}
-        sig_tiles = [{"label":f"{emoji_m.get(s,'')} {s}","value":v,
-                      "color":{"STRONG BUY":"#22c55e","BUY":"#4ade80","HOLD":"#fbbf24","AVOID":"#ef4444"}.get(s,"#94a3b8")}
-                     for s,v in sc_c.items()]
-        kpi_tiles(sig_tiles)
-
-    # Rationale
-    with st.expander("📝 Investment rationale — all holdings"):
-        for _, row in port_df.iterrows():
-            st.markdown(f"**{row['Company']}** `{row['Ticker']}` — Score {row['Score']}/100 · {row['Signal']}")
-            st.markdown(row.get("Explanation",""))
-            st.divider()
-
-    st.download_button("⬇️ Download Portfolio (CSV)", data=portfolio_to_csv(port_df),
-                       file_name="kairoforge_portfolio.csv", mime="text/csv")
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # ROUTER
 # ─────────────────────────────────────────────────────────────────────────────
 if   "Screener"  in page: render_screener()
 elif "Analysis"  in page: render_analysis()
-elif "Portfolio" in page: render_portfolio()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
