@@ -14,7 +14,7 @@ import streamlit as st
 import plotly.graph_objects as go
 
 from stocks           import STOCKS, SORTED_LABELS
-from data_loader      import fetch_stock_data, fetch_price_history, safe_get
+from data_loader      import fetch_stock_data, fetch_price_history, fetch_news, safe_get
 from valuation_models import (
     calculate_graham, calculate_ratios,
     estimate_wacc, calculate_dcf, run_sensitivity,
@@ -320,6 +320,55 @@ def score_donut(score):
     fig.update_layout(showlegend=False, height=175,
                       **{**_DARK_LAYOUT, "margin": dict(t=8, b=8, l=8, r=8)})
     return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SENTIMENT ANALYSIS  (keyword-based, no external API)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_POS_WORDS = {
+    "profit","growth","record","surge","strong","beat","rise","gain","rally",
+    "upgrade","outperform","buy","positive","expand","increase","boost","high",
+    "milestone","robust","recovery","optimistic","advance","jumped","soared",
+    "breakout","dividend","award","win","agreement","acquisition","launch",
+    "delivered","exceeded","improved","raised","bullish","opportunity",
+}
+_NEG_WORDS = {
+    "loss","decline","miss","weak","fall","drop","downgrade","underperform",
+    "sell","negative","cut","reduce","decrease","slump","warn","concern",
+    "risk","debt","lawsuit","probe","investigation","fine","penalty","fraud",
+    "crash","plunge","tumble","bearish","disappoint","challenge","struggle",
+    "default","downside","volatile","uncertainty","slow","miss","halt",
+}
+
+def _score_headline(title: str) -> int:
+    """Return +1 (positive), -1 (negative), or 0 (neutral) for a headline."""
+    words = set(title.lower().split())
+    pos = len(words & _POS_WORDS)
+    neg = len(words & _NEG_WORDS)
+    if pos > neg:   return 1
+    if neg > pos:   return -1
+    return 0
+
+
+def _time_ago(ts) -> str:
+    """Convert a Unix timestamp or ISO string to a human-readable 'X ago' label."""
+    import time as _time
+    try:
+        if ts is None:
+            return ""
+        if isinstance(ts, str):
+            from datetime import datetime, timezone
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            epoch = dt.timestamp()
+        else:
+            epoch = float(ts)
+        diff = int(_time.time() - epoch)
+        if diff < 3600:   return f"{diff//60}m ago"
+        if diff < 86400:  return f"{diff//3600}h ago"
+        return f"{diff//86400}d ago"
+    except Exception:
+        return ""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -697,8 +746,8 @@ def render_analysis():
               q_signal, q_emoji, q_score, q_expl)
 
     # Sub-tabs
-    ov, val, dcf_tab, sens = st.tabs([
-        "🏠 Overview", "📐 Valuation", "💹 DCF Model", "🔬 Sensitivity"
+    ov, val, dcf_tab, sens, news_tab = st.tabs([
+        "🏠 Overview", "📐 Valuation", "💹 DCF Model", "🔬 Sensitivity", "📰 News & Sentiment"
     ])
 
     # ── OVERVIEW ──────────────────────────────────────────────
@@ -928,6 +977,104 @@ def render_analysis():
             for c in fmt_df.columns:
                 fmt_df[c] = fmt_df[c].apply(lambda v: f"₹{v:,.0f}" if pd.notna(v) else "—")
             st.dataframe(fmt_df, use_container_width=True)
+
+    # ── NEWS & SENTIMENT ───────────────────────────────────────
+    with news_tab:
+        st.markdown("#### 📰 News & Sentiment")
+        st.caption("Recent headlines fetched via Yahoo Finance. Sentiment is keyword-based — for context only.")
+
+        with st.spinner("Loading news…"):
+            articles = fetch_news(TICKER)
+
+        if not articles:
+            st.info("No recent news found for this ticker. Yahoo Finance may not have coverage for this stock.")
+        else:
+            # ── Sentiment scores ───────────────────────────────
+            scores = [_score_headline(a["title"]) for a in articles]
+            pos_n  = scores.count(1)
+            neg_n  = scores.count(-1)
+            neu_n  = scores.count(0)
+            total  = len(scores)
+            avg_s  = sum(scores) / total if total else 0
+
+            # Overall label
+            if avg_s >= 0.25:
+                sent_label, sent_color, sent_emoji = "Bullish", "#22c55e", "🟢"
+            elif avg_s <= -0.25:
+                sent_label, sent_color, sent_emoji = "Bearish", "#ef4444", "🔴"
+            else:
+                sent_label, sent_color, sent_emoji = "Neutral", "#fbbf24", "🟡"
+
+            # Summary KPI tiles
+            kpi_tiles([
+                {"label": "Overall Sentiment", "value": f"{sent_emoji} {sent_label}",
+                 "help": f"Average score: {avg_s:+.2f}", "color": sent_color},
+                {"label": "Positive Headlines", "value": pos_n,
+                 "help": "Articles with bullish keywords", "color": "#22c55e"},
+                {"label": "Neutral Headlines",  "value": neu_n,
+                 "help": "No clear signal", "color": "#94a3b8"},
+                {"label": "Negative Headlines", "value": neg_n,
+                 "help": "Articles with bearish keywords", "color": "#ef4444"},
+                {"label": "Total Articles",     "value": total,
+                 "help": "From Yahoo Finance", "color": "#f1f5f9"},
+            ])
+
+            # Sentiment bar chart
+            bar_fig = go.Figure(go.Bar(
+                x=["Positive", "Neutral", "Negative"],
+                y=[pos_n, neu_n, neg_n],
+                marker_color=["#22c55e", "#94a3b8", "#ef4444"],
+                text=[pos_n, neu_n, neg_n], textposition="outside",
+                textfont={"color": "#e2e8f0"},
+            ))
+            bar_fig.update_layout(
+                title=dict(text="Headline Sentiment Breakdown", font={"size": 12}),
+                yaxis_title="# Articles",
+                yaxis={"gridcolor": "rgba(59,130,246,0.08)"},
+                height=220, showlegend=False, **_DARK_LAYOUT,
+            )
+            st.plotly_chart(bar_fig, use_container_width=True)
+
+            st.markdown("#### Recent Headlines")
+
+            # Render each article
+            for art, sc in zip(articles, scores):
+                if sc == 1:
+                    badge = '<span style="background:rgba(22,163,74,.2);color:#4ade80;border:1px solid #16a34a;padding:2px 9px;border-radius:12px;font-size:.7rem;font-weight:700">POSITIVE</span>'
+                    left_border = "#16a34a"
+                elif sc == -1:
+                    badge = '<span style="background:rgba(220,38,38,.2);color:#f87171;border:1px solid #dc2626;padding:2px 9px;border-radius:12px;font-size:.7rem;font-weight:700">NEGATIVE</span>'
+                    left_border = "#dc2626"
+                else:
+                    badge = '<span style="background:rgba(148,163,184,.15);color:#94a3b8;border:1px solid #475569;padding:2px 9px;border-radius:12px;font-size:.7rem;font-weight:700">NEUTRAL</span>'
+                    left_border = "#334155"
+
+                pub   = art.get("publisher") or ""
+                t_ago = _time_ago(art.get("time"))
+                link  = art.get("link") or ""
+                title = art.get("title", "")
+
+                meta  = " · ".join(filter(None, [pub, t_ago]))
+                title_html = (
+                    f'<a href="{link}" target="_blank" '
+                    f'style="color:#e2e8f0;text-decoration:none;font-weight:600;font-size:.9rem">'
+                    f'{title}</a>'
+                    if link else
+                    f'<span style="color:#e2e8f0;font-weight:600;font-size:.9rem">{title}</span>'
+                )
+
+                st.markdown(f"""
+<div style="background:rgba(15,23,42,0.6);border:1px solid rgba(59,130,246,0.1);
+border-left:3px solid {left_border};border-radius:10px;
+padding:12px 16px;margin-bottom:8px">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+    <div style="flex:1;min-width:200px">{title_html}</div>
+    <div style="white-space:nowrap">{badge}</div>
+  </div>
+  <div style="color:#475569;font-size:.75rem;margin-top:6px">{meta}</div>
+</div>""", unsafe_allow_html=True)
+
+            st.caption("⚠️ Sentiment is automated keyword analysis — not investment advice.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

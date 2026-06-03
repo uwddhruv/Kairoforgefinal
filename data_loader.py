@@ -53,6 +53,46 @@ def fetch_stock_data(ticker: str) -> dict:
         return {}
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_news(ticker: str) -> list[dict]:
+    """Fetch recent news articles for a ticker via yfinance.
+
+    Parameters
+    ----------
+    ticker : str
+        Yahoo Finance ticker, e.g. ``"RELIANCE.NS"``.
+
+    Returns
+    -------
+    list[dict]
+        Each item has keys: title, publisher, link, providerPublishTime.
+        Returns empty list on failure or when no news is available.
+    """
+    try:
+        raw = yf.Ticker(ticker).news or []
+        out = []
+        for item in raw:
+            # yfinance may return content nested under a 'content' key
+            if isinstance(item, dict) and "content" in item:
+                item = item["content"]
+            title = (item.get("title") or "").strip()
+            if not title:
+                continue
+            out.append({
+                "title":     title,
+                "publisher": item.get("provider", {}).get("displayName", "")
+                             if isinstance(item.get("provider"), dict)
+                             else item.get("publisher", ""),
+                "link":      item.get("canonicalUrl", {}).get("url", "")
+                             if isinstance(item.get("canonicalUrl"), dict)
+                             else item.get("link", ""),
+                "time":      item.get("pubDate") or item.get("providerPublishTime"),
+            })
+        return out
+    except Exception:
+        return []
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_price_history(ticker: str, period: str = "5y") -> pd.DataFrame:
     """Fetch OHLCV history for a ticker.
