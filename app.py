@@ -13,7 +13,7 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 
-from stocks           import STOCKS, SORTED_LABELS
+from stocks           import STOCKS, SORTED_LABELS, INDUSTRY_PEERS, SECTOR_PEERS, TICKER_TO_NAME
 from data_loader      import fetch_stock_data, fetch_price_history, fetch_news, safe_get
 from valuation_models import (
     calculate_graham, calculate_ratios,
@@ -1308,64 +1308,81 @@ padding:12px 16px;margin-bottom:8px">
     # ── PEER COMPARISON ───────────────────────────────────────
     with peer_tab:
         st.markdown("#### 🔄 Peer Comparison")
-        st.caption("How this stock stacks up against peers on key metrics.")
 
-        # Benchmark tickers — always available, well-known NSE stocks
-        _BENCHMARKS = {
-            "Reliance Industries": "RELIANCE.NS",
-            "TCS":                 "TCS.NS",
-            "Infosys":             "INFY.NS",
-            "HDFC Bank":           "HDFCBANK.NS",
-            "ICICI Bank":          "ICICIBANK.NS",
-            "ITC":                 "ITC.NS",
-            "Bajaj Finance":       "BAJFINANCE.NS",
-            "Asian Paints":        "ASIANPAINT.NS",
-        }
+        # Determine the peer universe from industry first, sector as fallback
+        _cur_industry = safe_get(info, "industry", "") or ""
+        _cur_sector   = safe_get(info, "sector",   "") or ""
 
-        # Build peer rows — screener cache first, fallback to benchmark fetch
+        # Industry-level match (most specific)
+        _ind_peers = [
+            t for t in INDUSTRY_PEERS.get(_cur_industry, [])
+            if t != TICKER
+        ]
+        # Sector-level supplement — only same-sector tickers not already in industry list
+        _sec_peers = [
+            t for t in SECTOR_PEERS.get(_cur_sector, [])
+            if t != TICKER and t not in _ind_peers
+        ]
+
+        if _ind_peers:
+            # Industry peers are specific enough — never mix in sector peers
+            _peer_tickers = _ind_peers[:7]
+            _match_level  = "industry"
+            _group_label  = _cur_industry
+        elif _sec_peers:
+            _peer_tickers = _sec_peers[:7]
+            _match_level  = "sector"
+            _group_label  = _cur_sector
+        else:
+            _peer_tickers = []
+            _match_level  = ""
+            _group_label  = ""
+
+        if _peer_tickers:
+            st.caption(f"Matched by **{_match_level}**: {_group_label}")
+        else:
+            st.caption("No industry/sector peers found in our universe — showing broad market snapshot.")
+
+        # Fetch and score peer data
         peer_rows: list[dict] = []
 
-        scr_df = st.session_state.screener_df
-        if scr_df is not None and not scr_df.empty:
-            # Use screener data: top 7 by score (exclude current stock)
-            others = scr_df[scr_df["Ticker"] != TICKER].head(7)
-            for _, r in others.iterrows():
-                peer_rows.append({
-                    "Ticker":   r.get("Ticker", ""),
-                    "Company":  r.get("Company", ""),
-                    "Price":    r.get("Price (₹)"),
-                    "Score":    r.get("Score", 0),
-                    "Signal":   r.get("Signal", ""),
-                    "MoS":      r.get("MoS %"),
-                    "ROE":      r.get("ROE (%)"),
-                    "PE":       r.get("P/E"),
-                    "DE":       r.get("D/E"),
-                })
-            st.caption(f"Showing top {len(peer_rows)} stocks from your last screener run for comparison.")
-        else:
-            # Fallback: fetch benchmark set
-            bench_to_load = {k: v for k, v in _BENCHMARKS.items() if v != TICKER}
-            with st.spinner("Fetching benchmark data for comparison…"):
-                for bname, bticker in bench_to_load.items():
-                    try:
-                        binfo = fetch_stock_data(bticker)
-                        if not binfo:
-                            continue
-                        brow = _score_stock(bticker, bname, binfo)
-                        peer_rows.append({
-                            "Ticker":  bticker,
-                            "Company": bname,
-                            "Price":   brow.get("Price (₹)"),
-                            "Score":   brow.get("Score", 0),
-                            "Signal":  brow.get("Signal", ""),
-                            "MoS":     brow.get("MoS %"),
-                            "ROE":     brow.get("ROE (%)"),
-                            "PE":      brow.get("P/E"),
-                            "DE":      brow.get("D/E"),
-                        })
-                    except Exception:
+        # Cap at 7 peers; yfinance data is cached so subsequent calls are fast
+        _tickers_to_load = _peer_tickers[:7]
+
+        # Absolute fallback: show a handful of large-caps as market context
+        if not _tickers_to_load:
+            _tickers_to_load = [
+                t for t in [
+                    "RELIANCE.NS","TCS.NS","HDFCBANK.NS",
+                    "INFY.NS","ICICIBANK.NS","ITC.NS","KOTAKBANK.NS",
+                ] if t != TICKER
+            ][:6]
+
+        with st.spinner(f"Loading {len(_tickers_to_load)} peers…"):
+            for bticker in _tickers_to_load:
+                try:
+                    binfo = fetch_stock_data(bticker)
+                    if not binfo:
                         continue
-            st.caption("Showing benchmark comparison (run the Screener for sector-level peers).")
+                    bname = (
+                        TICKER_TO_NAME.get(bticker)
+                        or safe_get(binfo, "shortName")
+                        or bticker
+                    )
+                    brow = _score_stock(bticker, bname, binfo)
+                    peer_rows.append({
+                        "Ticker":  bticker,
+                        "Company": bname,
+                        "Price":   brow.get("Price (₹)"),
+                        "Score":   brow.get("Score", 0),
+                        "Signal":  brow.get("Signal", ""),
+                        "MoS":     brow.get("MoS %"),
+                        "ROE":     brow.get("ROE (%)"),
+                        "PE":      brow.get("P/E"),
+                        "DE":      brow.get("D/E"),
+                    })
+                except Exception:
+                    continue
 
         # Always add the current stock at the top
         cur_row = {
