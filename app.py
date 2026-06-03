@@ -372,6 +372,217 @@ def _time_ago(ts) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# HTML REPORT GENERATOR
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_html_report(
+    ticker: str,
+    name: str,
+    sector: str,
+    price,
+    signal: str,
+    score: int,
+    explanation: str,
+    graham,
+    eps,
+    bvps,
+    ratios: dict,
+    dcf_res: dict | None,
+    mkt_cap,
+    beta,
+    wacc: float,
+) -> str:
+    """Return a self-contained HTML equity research report as a string."""
+    from datetime import date as _date
+
+    def _v(val, fmt="₹{:,.2f}", fallback="N/A"):
+        if val is None:
+            return fallback
+        try:
+            f = float(val)
+            if math.isnan(f) or math.isinf(f):
+                return fallback
+            return fmt.format(f)
+        except (TypeError, ValueError):
+            return str(val)
+
+    today     = _date.today().strftime("%d %B %Y")
+    sig_color = {"STRONG BUY":"#16a34a","BUY":"#059669","HOLD":"#d97706","AVOID":"#dc2626"}.get(signal,"#6b7280")
+    price_s   = _v(price, "₹{:,.2f}")
+    graham_s  = _v(graham, "₹{:,.2f}")
+    mos_s     = f"{((graham - price)/graham*100):+.1f}%" if graham and price else "N/A"
+    cap_s     = "N/A"
+    if mkt_cap:
+        if mkt_cap >= 1e12:   cap_s = f"₹{mkt_cap/1e12:.2f}T"
+        elif mkt_cap >= 1e9:  cap_s = f"₹{mkt_cap/1e9:.1f}B"
+        else:                 cap_s = f"₹{mkt_cap/1e6:.0f}M"
+
+    # Ratios rows
+    ratio_rows = ""
+    ratio_defs = [
+        ("P/E (Trailing)",    "trailingPE",   "{:.1f}×"),
+        ("P/E (Forward)",     "forwardPE",    "{:.1f}×"),
+        ("P/B",               "P/B",          "{:.2f}×"),
+        ("ROE (%)",           "ROE (%)",      "{:.1f}%"),
+        ("ROIC (%)",          "ROIC (%)",     "{:.1f}%"),
+        ("Debt / Equity",     "Debt / Equity","{:.2f}×"),
+        ("EPS Growth (%)",    "EPS Growth (%)","{}%"),
+        ("Dividend Yield (%)", "Dividend Yield (%)","{}%"),
+    ]
+    for label, key, fmt in ratio_defs:
+        val = ratios.get(key)
+        disp = _v(val, fmt) if val is not None else "N/A"
+        ratio_rows += f"<tr><td>{label}</td><td><strong>{disp}</strong></td></tr>"
+
+    # DCF section
+    dcf_html = ""
+    if dcf_res:
+        iv  = dcf_res.get("intrinsic_value")
+        pv1 = dcf_res.get("pv_stage1")
+        pv2 = dcf_res.get("pv_stage2")
+        pvt = dcf_res.get("pv_terminal")
+        if iv and price:
+            disc = (iv - price) / iv * 100
+            verdict = f"{'Undervalued' if price < iv else 'Overvalued'} by {abs(disc):.1f}%"
+        else:
+            verdict = "N/A"
+        dcf_html = f"""
+        <h2>3-Stage DCF Valuation</h2>
+        <table class="rtable">
+          <tr><td>DCF Intrinsic Value</td><td><strong>{_v(iv, "₹{{:,.0f}}")}</strong></td></tr>
+          <tr><td>Market Price</td><td><strong>{price_s}</strong></td></tr>
+          <tr><td>Verdict</td><td><strong style="color:{sig_color}">{verdict}</strong></td></tr>
+          <tr><td>PV Stage 1 (High Growth)</td><td>{_v(pv1, "₹{{:,.0f}}")}</td></tr>
+          <tr><td>PV Stage 2 (Transition)</td><td>{_v(pv2, "₹{{:,.0f}}")}</td></tr>
+          <tr><td>PV Terminal Value</td><td>{_v(pvt, "₹{{:,.0f}}")}</td></tr>
+        </table>"""
+
+    # Explanation — strip markdown bold markers
+    expl_clean = explanation.replace("**", "").replace("  \n", "<br>")
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KAIROFORGE — {name} Research Report</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: 'Segoe UI', Arial, sans-serif; font-size: 13px;
+          color: #1e293b; background: #f8fafc; padding: 32px; }}
+  .page {{ max-width: 820px; margin: 0 auto; background: #fff;
+           border-radius: 8px; padding: 40px 48px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }}
+  .header {{ border-bottom: 3px solid #1d4ed8; padding-bottom: 20px; margin-bottom: 28px; }}
+  .brand {{ font-size: 11px; font-weight: 700; color: #1d4ed8;
+            letter-spacing: .12em; text-transform: uppercase; margin-bottom: 8px; }}
+  .co-name {{ font-size: 26px; font-weight: 800; color: #0f172a; line-height: 1.15; }}
+  .co-sub {{ color: #64748b; font-size: 13px; margin-top: 6px; }}
+  .signal-badge {{ display: inline-block; padding: 4px 14px; border-radius: 20px;
+                   font-weight: 700; font-size: 12px; color: #fff;
+                   background: {sig_color}; margin-top: 10px; }}
+  .kpi-grid {{ display: grid; grid-template-columns: repeat(3, 1fr);
+               gap: 14px; margin: 24px 0; }}
+  .kpi-box {{ background: #f1f5f9; border-radius: 8px; padding: 14px 16px; }}
+  .kpi-label {{ font-size: 10px; font-weight: 700; color: #64748b;
+                text-transform: uppercase; letter-spacing: .07em; margin-bottom: 5px; }}
+  .kpi-val {{ font-size: 18px; font-weight: 800; color: #0f172a; }}
+  h2 {{ font-size: 14px; font-weight: 700; color: #1d4ed8;
+        text-transform: uppercase; letter-spacing: .06em;
+        border-bottom: 1px solid #e2e8f0; padding-bottom: 6px;
+        margin: 28px 0 14px; }}
+  .rtable {{ width: 100%; border-collapse: collapse; font-size: 12.5px; }}
+  .rtable td {{ padding: 7px 10px; border-bottom: 1px solid #f1f5f9; }}
+  .rtable tr:nth-child(even) td {{ background: #f8fafc; }}
+  .rtable td:first-child {{ color: #475569; width: 55%; }}
+  .explanation {{ background: #f8fafc; border-left: 4px solid #1d4ed8;
+                  border-radius: 0 8px 8px 0; padding: 14px 18px;
+                  line-height: 1.65; color: #334155; font-size: 12.5px; margin: 14px 0; }}
+  .score-bar-bg {{ background: #e2e8f0; border-radius: 6px; height: 10px; margin-top: 6px; overflow:hidden; }}
+  .score-bar {{ height: 10px; border-radius: 6px; background: {sig_color}; width: {score}%; }}
+  .footer {{ margin-top: 36px; padding-top: 16px; border-top: 1px solid #e2e8f0;
+             font-size: 10.5px; color: #94a3b8; text-align: center; line-height: 1.7; }}
+  @media print {{
+    body {{ background: #fff; padding: 0; }}
+    .page {{ box-shadow: none; padding: 20px; }}
+  }}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div class="brand">KAIROFORGE · Equity Research Terminal</div>
+    <div class="co-name">{name}</div>
+    <div class="co-sub">
+      {sector or "NSE"} &nbsp;·&nbsp; <strong>{ticker}</strong>
+      &nbsp;·&nbsp; Report date: {today}
+    </div>
+    <div class="signal-badge">{signal}</div>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi-box">
+      <div class="kpi-label">Market Price</div>
+      <div class="kpi-val">{price_s}</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-label">Graham Number</div>
+      <div class="kpi-val">{graham_s}</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-label">Margin of Safety</div>
+      <div class="kpi-val">{mos_s}</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-label">Market Cap</div>
+      <div class="kpi-val">{cap_s}</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-label">Beta</div>
+      <div class="kpi-val">{_v(beta, "{:.2f}")}</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-label">Est. WACC</div>
+      <div class="kpi-val">{wacc*100:.1f}%</div>
+    </div>
+  </div>
+
+  <h2>Value Opportunity Score</h2>
+  <p style="font-size:28px;font-weight:800;color:{sig_color}">{score}<span style="font-size:14px;color:#64748b;font-weight:500"> / 100</span></p>
+  <div class="score-bar-bg"><div class="score-bar"></div></div>
+
+  <h2>Investment Rationale</h2>
+  <div class="explanation">{expl_clean}</div>
+
+  <h2>Graham Number Analysis</h2>
+  <table class="rtable">
+    <tr><td>EPS (Trailing / Adjusted)</td><td><strong>{_v(eps, "₹{{:,.2f}}")}</strong></td></tr>
+    <tr><td>Book Value per Share</td><td><strong>{_v(bvps, "₹{{:,.2f}}")}</strong></td></tr>
+    <tr><td>Graham Number (√22.5 × EPS × BVPS)</td><td><strong>{graham_s}</strong></td></tr>
+    <tr><td>Current Price</td><td><strong>{price_s}</strong></td></tr>
+    <tr><td>Margin of Safety</td><td><strong style="color:{sig_color}">{mos_s}</strong></td></tr>
+  </table>
+
+  <h2>Key Ratios</h2>
+  <table class="rtable">{ratio_rows}</table>
+
+  {dcf_html}
+
+  <div class="footer">
+    <strong>KAIROFORGE — Equity Research Terminal</strong><br>
+    Created by Dhruv Vaniawala · uwddhruv@gmail.com<br><br>
+    ⚠️ For educational purposes only — not financial advice.
+    All valuations are model-based estimates. Consult a qualified financial adviser before investing.<br>
+    Data sourced from Yahoo Finance. Accuracy not guaranteed.
+  </div>
+
+</div>
+</body>
+</html>"""
+    return html
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CUSTOM HTML COMPONENTS
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -744,6 +955,23 @@ def render_analysis():
     # Hero card
     hero_card(name, TICKER, sector or industry or "Equity", price,
               q_signal, q_emoji, q_score, q_expl)
+
+    # Export report button — always visible once a stock is loaded
+    _dcf_for_report = st.session_state.get("_dcf_res")
+    _report_html = generate_html_report(
+        ticker=TICKER, name=name, sector=sector or industry or "",
+        price=price, signal=q_signal, score=q_score, explanation=q_expl,
+        graham=graham, eps=eps, bvps=bvps, ratios=ratios,
+        dcf_res=_dcf_for_report, mkt_cap=mkt_cap, beta=beta, wacc=wacc,
+    )
+    _safe_name = "".join(c if c.isalnum() else "_" for c in name)
+    st.download_button(
+        label="⬇️ Download Research Report (HTML)",
+        data=_report_html.encode("utf-8"),
+        file_name=f"KAIROFORGE_{_safe_name}_{TICKER}.html",
+        mime="text/html",
+        help="Downloads a self-contained HTML report. Open in any browser to view or print as PDF.",
+    )
 
     # Sub-tabs
     ov, val, dcf_tab, sens, news_tab, peer_tab = st.tabs([
