@@ -746,8 +746,9 @@ def render_analysis():
               q_signal, q_emoji, q_score, q_expl)
 
     # Sub-tabs
-    ov, val, dcf_tab, sens, news_tab = st.tabs([
-        "🏠 Overview", "📐 Valuation", "💹 DCF Model", "🔬 Sensitivity", "📰 News & Sentiment"
+    ov, val, dcf_tab, sens, news_tab, peer_tab = st.tabs([
+        "🏠 Overview", "📐 Valuation", "💹 DCF Model",
+        "🔬 Sensitivity", "📰 News & Sentiment", "🔄 Peer Comparison"
     ])
 
     # ── OVERVIEW ──────────────────────────────────────────────
@@ -1075,6 +1076,222 @@ padding:12px 16px;margin-bottom:8px">
 </div>""", unsafe_allow_html=True)
 
             st.caption("⚠️ Sentiment is automated keyword analysis — not investment advice.")
+
+    # ── PEER COMPARISON ───────────────────────────────────────
+    with peer_tab:
+        st.markdown("#### 🔄 Peer Comparison")
+        st.caption("How this stock stacks up against peers on key metrics.")
+
+        # Benchmark tickers — always available, well-known NSE stocks
+        _BENCHMARKS = {
+            "Reliance Industries": "RELIANCE.NS",
+            "TCS":                 "TCS.NS",
+            "Infosys":             "INFY.NS",
+            "HDFC Bank":           "HDFCBANK.NS",
+            "ICICI Bank":          "ICICIBANK.NS",
+            "ITC":                 "ITC.NS",
+            "Bajaj Finance":       "BAJFINANCE.NS",
+            "Asian Paints":        "ASIANPAINT.NS",
+        }
+
+        # Build peer rows — screener cache first, fallback to benchmark fetch
+        peer_rows: list[dict] = []
+
+        scr_df = st.session_state.screener_df
+        if scr_df is not None and not scr_df.empty:
+            # Use screener data: top 7 by score (exclude current stock)
+            others = scr_df[scr_df["Ticker"] != TICKER].head(7)
+            for _, r in others.iterrows():
+                peer_rows.append({
+                    "Ticker":   r.get("Ticker", ""),
+                    "Company":  r.get("Company", ""),
+                    "Price":    r.get("Price (₹)"),
+                    "Score":    r.get("Score", 0),
+                    "Signal":   r.get("Signal", ""),
+                    "MoS":      r.get("MoS %"),
+                    "ROE":      r.get("ROE (%)"),
+                    "PE":       r.get("P/E"),
+                    "DE":       r.get("D/E"),
+                })
+            st.caption(f"Showing top {len(peer_rows)} stocks from your last screener run for comparison.")
+        else:
+            # Fallback: fetch benchmark set
+            bench_to_load = {k: v for k, v in _BENCHMARKS.items() if v != TICKER}
+            with st.spinner("Fetching benchmark data for comparison…"):
+                for bname, bticker in bench_to_load.items():
+                    try:
+                        binfo = fetch_stock_data(bticker)
+                        if not binfo:
+                            continue
+                        brow = _score_stock(bticker, bname, binfo)
+                        peer_rows.append({
+                            "Ticker":  bticker,
+                            "Company": bname,
+                            "Price":   brow.get("Price (₹)"),
+                            "Score":   brow.get("Score", 0),
+                            "Signal":  brow.get("Signal", ""),
+                            "MoS":     brow.get("MoS %"),
+                            "ROE":     brow.get("ROE (%)"),
+                            "PE":      brow.get("P/E"),
+                            "DE":      brow.get("D/E"),
+                        })
+                    except Exception:
+                        continue
+            st.caption("Showing benchmark comparison (run the Screener for sector-level peers).")
+
+        # Always add the current stock at the top
+        cur_row = {
+            "Ticker":  TICKER,
+            "Company": f"★ {name}",   # star marks the current stock
+            "Price":   price,
+            "Score":   q_score,
+            "Signal":  q_signal,
+            "MoS":     qd.get("MoS %"),
+            "ROE":     qd.get("ROE (%)"),
+            "PE":      qd.get("P/E"),
+            "DE":      qd.get("D/E"),
+        }
+        all_rows = [cur_row] + peer_rows
+
+        if len(all_rows) < 2:
+            st.info("Not enough peer data available. Run the Screener to enable full peer comparison.")
+        else:
+            # ── Comparison table ───────────────────────────────
+            sig_badge = {
+                "STRONG BUY": '<span class="badge b-sb">STRONG BUY</span>',
+                "BUY":        '<span class="badge b-b">BUY</span>',
+                "HOLD":       '<span class="badge b-h">HOLD</span>',
+                "AVOID":      '<span class="badge b-av">AVOID</span>',
+            }
+
+            def _peer_cell(col, val, is_cur):
+                hi = "font-weight:700;" if is_cur else ""
+                na = f'<td style="color:#334155;{hi}">—</td>'
+                if val is None or (isinstance(val, float) and math.isnan(val)):
+                    return na
+                if col == "Company":
+                    clr = "#93c5fd" if is_cur else "#cbd5e1"
+                    return f'<td style="color:{clr};font-weight:700">{val}</td>'
+                if col == "Signal":
+                    return f"<td>{sig_badge.get(str(val), str(val))}</td>"
+                if col == "Price":
+                    return f'<td style="color:#e2e8f0;{hi}">₹{float(val):,.0f}</td>'
+                if col == "Score":
+                    border_c = {"STRONG BUY":"#16a34a","BUY":"#4ade80",
+                                "HOLD":"#ca8a04","AVOID":"#dc2626"}
+                    clr = border_c.get("", "#94a3b8")
+                    return f'<td style="color:#f1f5f9;{hi}">{int(val)}</td>'
+                if col == "MoS":
+                    v = float(val)
+                    clr = "#22c55e" if v > 0 else "#ef4444"
+                    return f'<td style="color:{clr};{hi}">{v:+.1f}%</td>'
+                if col == "ROE":
+                    v = float(val)
+                    clr = "#22c55e" if v >= 20 else "#fbbf24" if v >= 10 else "#ef4444"
+                    return f'<td style="color:{clr};{hi}">{v:.1f}%</td>'
+                if col == "PE":
+                    v = float(val)
+                    clr = "#22c55e" if v <= 15 else "#fbbf24" if v <= 30 else "#ef4444"
+                    return f'<td style="color:{clr};{hi}">{v:.1f}×</td>'
+                if col == "DE":
+                    v = float(val)
+                    clr = "#22c55e" if v <= 0.5 else "#fbbf24" if v <= 1.5 else "#ef4444"
+                    return f'<td style="color:{clr};{hi}">{v:.2f}×</td>'
+                return f"<td>{val}</td>"
+
+            cols = ["Company", "Price", "Score", "Signal", "MoS", "ROE", "PE", "DE"]
+            labels = ["Company", "Price (₹)", "Score", "Signal",
+                      "MoS %", "ROE %", "P/E", "D/E"]
+
+            header = "".join(f"<th>{l}</th>" for l in labels)
+            t_rows = ""
+            for r in all_rows:
+                is_cur = r["Ticker"] == TICKER
+                bg = "rgba(29,78,216,0.12)" if is_cur else ""
+                bl = "rgba(59,130,246,0.6)" if is_cur else "transparent"
+                cells = "".join(_peer_cell(c, r.get(c), is_cur) for c in cols)
+                t_rows += (
+                    f'<tr style="background:{bg};border-left:3px solid {bl}">'
+                    f'{cells}</tr>'
+                )
+
+            st.markdown(
+                f'<div class="scr-wrap"><table class="scr-table">'
+                f'<thead><tr>{header}</tr></thead>'
+                f'<tbody>{t_rows}</tbody></table></div>',
+                unsafe_allow_html=True,
+            )
+
+            # ── Bar chart: Score comparison ─────────────────────
+            st.markdown("")
+            companies = [r["Company"] for r in all_rows]
+            scores_v  = [r.get("Score") or 0 for r in all_rows]
+            bar_cols  = [
+                "#3b82f6" if r["Ticker"] == TICKER else
+                "#16a34a" if (r.get("Score") or 0) >= 70 else
+                "#4ade80" if (r.get("Score") or 0) >= 50 else
+                "#ca8a04" if (r.get("Score") or 0) >= 30 else "#dc2626"
+                for r in all_rows
+            ]
+
+            cmp_fig = go.Figure(go.Bar(
+                x=companies,
+                y=scores_v,
+                marker_color=bar_cols,
+                text=scores_v,
+                textposition="outside",
+                textfont={"color": "#e2e8f0"},
+            ))
+            cmp_fig.update_layout(
+                title=dict(
+                    text="Value Opportunity Score — Current Stock (blue) vs Peers",
+                    font={"size": 12},
+                ),
+                yaxis={"range": [0, 115], "gridcolor": "rgba(59,130,246,0.08)"},
+                xaxis={"tickangle": -25},
+                height=320, showlegend=False, **_DARK_LAYOUT,
+            )
+            st.plotly_chart(cmp_fig, use_container_width=True)
+
+            # ── ROE vs P/E scatter ──────────────────────────────
+            sc_x, sc_y, sc_t, sc_c, sc_s = [], [], [], [], []
+            for r in all_rows:
+                pe_v  = r.get("PE")
+                roe_v = r.get("ROE")
+                if pe_v is None or roe_v is None:
+                    continue
+                try:
+                    pe_f  = float(pe_v)
+                    roe_f = float(roe_v)
+                    if math.isnan(pe_f) or math.isnan(roe_f):
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                sc_x.append(pe_f)
+                sc_y.append(roe_f)
+                sc_t.append(r["Company"])
+                sc_c.append("#3b82f6" if r["Ticker"] == TICKER else "#64748b")
+                sc_s.append(18 if r["Ticker"] == TICKER else 10)
+
+            if len(sc_x) >= 2:
+                scat_fig = go.Figure(go.Scatter(
+                    x=sc_x, y=sc_y, mode="markers+text",
+                    text=sc_t, textposition="top center",
+                    textfont={"size": 9, "color": "#94a3b8"},
+                    marker={"color": sc_c, "size": sc_s,
+                            "line": {"color": "rgba(255,255,255,0.2)", "width": 1}},
+                    hovertemplate="<b>%{text}</b><br>P/E: %{x:.1f}×<br>ROE: %{y:.1f}%<extra></extra>",
+                ))
+                scat_fig.update_layout(
+                    title=dict(text="P/E vs ROE — lower P/E + higher ROE = better value",
+                               font={"size": 12}),
+                    xaxis={"title": "P/E Ratio (lower = cheaper)",
+                           "gridcolor": "rgba(59,130,246,0.08)"},
+                    yaxis={"title": "ROE % (higher = better)",
+                           "gridcolor": "rgba(59,130,246,0.08)"},
+                    height=340, **_DARK_LAYOUT,
+                )
+                st.plotly_chart(scat_fig, use_container_width=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
