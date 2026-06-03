@@ -19,7 +19,7 @@ from valuation_models import (
     estimate_wacc, calculate_dcf, run_sensitivity,
 )
 from screener  import run_screener, generate_signal, score_stock as _score_stock
-from screener import screener_to_csv
+from portfolio import screener_to_csv
 
 
 # ─────────────────────────────────────────────────────────────────────────────
