@@ -144,7 +144,7 @@ if "analysis_ticker" not in st.session_state: st.session_state.analysis_ticker =
 # SIDEBAR — logo + navigation
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.image("logo.png", use_container_width=True)
+    st.image("logo.png", width=240)
     st.markdown("<hr style='border:1px solid rgba(59,130,246,0.2);margin:12px 0'>", unsafe_allow_html=True)
 
     page = st.radio(
@@ -317,8 +317,8 @@ def score_donut(score):
     ))
     fig.add_annotation(text=f"<b>{score}</b>", x=0.5, y=0.5,
                        font={"size": 30, "color": color}, showarrow=False)
-    fig.update_layout(showlegend=False, height=175, **_DARK_LAYOUT,
-                      margin=dict(t=8, b=8, l=8, r=8))
+    fig.update_layout(showlegend=False, height=175,
+                      **{**_DARK_LAYOUT, "margin": dict(t=8, b=8, l=8, r=8)})
     return fig
 
 
@@ -861,6 +861,8 @@ def render_analysis():
 
         if not res:
             st.error("WACC must be higher than the terminal growth rate.")
+        elif price is None:
+            st.warning("Current price unavailable — cannot compute discount to intrinsic value.")
         else:
             iv   = res["intrinsic_value"]
             dp   = (iv - price) / iv * 100
@@ -1054,7 +1056,7 @@ elif "Portfolio" in page: render_portfolio()
 # ─────────────────────────────────────────────────────────────────────────────
 st.divider()
 st.markdown(
-    "<div style='color:#1e293b;font-size:.78rem;text-align:center'>"
+    "<div style='color:#475569;font-size:.78rem;text-align:center'>"
     "⚠️ For educational purposes only — not financial advice. "
     "All valuations are model-based estimates. Consult a qualified financial adviser before investing."
     "</div>",

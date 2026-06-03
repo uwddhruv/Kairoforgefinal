@@ -75,7 +75,7 @@ def calculate_ratios(info: dict) -> dict:
         Mapping of ratio name -> value (float or None).  None means the data
         was not available or could not be computed.
     """
-    from data import safe_get
+    from data_loader import safe_get
 
     price   = safe_get(info, "currentPrice") or safe_get(info, "regularMarketPrice")
     eps_ttm = safe_get(info, "trailingEps")
@@ -166,7 +166,7 @@ def estimate_wacc(info: dict) -> float:
     float
         Estimated WACC as a decimal (e.g. 0.12 = 12 %).
     """
-    from data import safe_get
+    from data_loader import safe_get
 
     RISK_FREE   = 0.072   # India 10Y Gsec yield (approx)
     ERP         = 0.070   # Equity Risk Premium for India (Damodaran)
