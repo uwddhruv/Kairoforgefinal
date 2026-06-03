@@ -855,6 +855,9 @@ def render_analysis():
 
         g1, g2, gT, w = g1p/100, g2p/100, gTp/100, wp/100
         res = calculate_dcf(fcf_in, g1, yr1, g2, yr2, gT, w)
+        st.session_state["_dcf_res"]    = res
+        st.session_state["_dcf_params"] = dict(fcf_in=fcf_in, g1=g1, yr1=yr1, g2=g2,
+                                                yr2=yr2, wp=wp, price=price)
 
         if not res:
             st.error("WACC must be higher than the terminal growth rate.")
@@ -897,28 +900,32 @@ def render_analysis():
         st.markdown("#### Sensitivity Analysis")
         st.caption("See how the DCF fair value changes as WACC and terminal growth assumptions shift.")
 
-        try:
-            res
-        except NameError:
-            st.warning("Complete the DCF tab first (select parameters).")
+        _dcf = st.session_state.get("_dcf_res")
+        _prm = st.session_state.get("_dcf_params")
+        if _dcf is None or _prm is None:
+            st.info("Open the **3-Stage DCF** tab first to compute a valuation, then return here.")
+        elif not _dcf:
+            st.warning("DCF returned no result — check WACC vs terminal growth.")
         else:
-            if not res:
-                st.warning("DCF returned no result — check WACC vs terminal growth.")
-            else:
-                base_w  = wp / 100
-                w_range = sorted({round(base_w + (i-3)*0.01, 3) for i in range(7)
-                                   if 0.05 <= round(base_w+(i-3)*0.01,3) <= 0.25})
-                g_range = [round(0.02 + i*0.01, 2) for i in range(6)]
+            _w   = _prm["wp"] / 100
+            w_range = sorted({round(_w + (i-3)*0.01, 3) for i in range(7)
+                               if 0.05 <= round(_w+(i-3)*0.01,3) <= 0.25})
+            g_range = [round(0.02 + i*0.01, 2) for i in range(6)]
 
-                with st.spinner("Computing…"):
-                    sdf = run_sensitivity(fcf_in, g1, yr1, g2, yr2, w_range, g_range)
+            with st.spinner("Computing sensitivity grid…"):
+                sdf = run_sensitivity(
+                    _prm["fcf_in"], _prm["g1"], _prm["yr1"],
+                    _prm["g2"],    _prm["yr2"],
+                    w_range, g_range,
+                )
 
-                st.plotly_chart(make_sensitivity_heatmap(sdf, price), use_container_width=True)
+            st.plotly_chart(make_sensitivity_heatmap(sdf, _prm["price"]),
+                            use_container_width=True)
 
-                fmt_df = sdf.copy()
-                for col in fmt_df.columns:
-                    fmt_df[col] = fmt_df[col].apply(lambda v: f"₹{v:,.0f}" if pd.notna(v) else "—")
-                st.dataframe(fmt_df, use_container_width=True)
+            fmt_df = sdf.copy()
+            for c in fmt_df.columns:
+                fmt_df[c] = fmt_df[c].apply(lambda v: f"₹{v:,.0f}" if pd.notna(v) else "—")
+            st.dataframe(fmt_df, use_container_width=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
