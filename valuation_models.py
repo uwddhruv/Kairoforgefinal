@@ -219,12 +219,14 @@ def calculate_dcf(
         pv1 += pv
         cashflows.append((f"Y{yr}", fcf, pv))
 
-    step = (growth_stage1 - terminal_growth) / max(years_stage2, 1)
-    g2   = growth_stage1
+    # Stage 2 — linearly interpolate from growth_stage1 DOWN to growth_stage2
+    # (not terminal_growth, which is a separate perpetuity assumption)
+    step = (growth_stage1 - growth_stage2) / max(years_stage2, 1)
+    g_s2 = growth_stage1
     for i in range(1, years_stage2 + 1):
-        g2  -= step
+        g_s2 -= step
         yr   = years_stage1 + i
-        fcf  = fcf * (1 + g2)
+        fcf  = fcf * (1 + g_s2)
         pv   = fcf / (1 + wacc) ** yr
         pv2 += pv
         cashflows.append((f"Y{yr}", fcf, pv))

@@ -7,6 +7,7 @@ Navigation (sidebar):
   📈 Stock Analysis — Graham Number · 3-Stage DCF · Ratios · Sensitivity · Price Target
 """
 
+import html as _html
 import math
 import pandas as pd
 import streamlit as st
@@ -408,24 +409,28 @@ def generate_html_report(
     sig_color = {"STRONG BUY":"#16a34a","BUY":"#059669","HOLD":"#d97706","AVOID":"#dc2626"}.get(signal,"#6b7280")
     price_s   = _v(price, "₹{:,.2f}")
     graham_s  = _v(graham, "₹{:,.2f}")
-    mos_s     = f"{((graham - price)/graham*100):+.1f}%" if graham and price else "N/A"
+    mos_s     = f"{((graham - price)/graham*100):+.1f}%" if (graham and price and graham > 0) else "N/A"
+    # Escape external strings used inside HTML
+    name   = _html.escape(str(name))
+    ticker = _html.escape(str(ticker))
+    sector = _html.escape(str(sector))
     cap_s     = "N/A"
     if mkt_cap:
         if mkt_cap >= 1e12:   cap_s = f"₹{mkt_cap/1e12:.2f}T"
         elif mkt_cap >= 1e9:  cap_s = f"₹{mkt_cap/1e9:.1f}B"
         else:                 cap_s = f"₹{mkt_cap/1e6:.0f}M"
 
-    # Ratios rows
+    # Ratios rows  — keys must match calculate_ratios() return dict
     ratio_rows = ""
     ratio_defs = [
-        ("P/E (Trailing)",    "trailingPE",   "{:.1f}×"),
-        ("P/E (Forward)",     "forwardPE",    "{:.1f}×"),
-        ("P/B",               "P/B",          "{:.2f}×"),
-        ("ROE (%)",           "ROE (%)",      "{:.1f}%"),
-        ("ROIC (%)",          "ROIC (%)",     "{:.1f}%"),
-        ("Debt / Equity",     "Debt / Equity","{:.2f}×"),
-        ("EPS Growth (%)",    "EPS Growth (%)","{}%"),
-        ("Dividend Yield (%)", "Dividend Yield (%)","{}%"),
+        ("P/E (Trailing)",         "P/E (Trailing)",     "{:.1f}×"),
+        ("P/E (Forward)",          "P/E (Forward)",      "{:.1f}×"),
+        ("P/B",                    "P/B",                "{:.2f}×"),
+        ("ROE (%)",                "ROE (%)",            "{:.1f}%"),
+        ("ROIC (%)",               "ROIC (%)",           "{:.1f}%"),
+        ("Debt / Equity",          "Debt / Equity",      "{:.2f}×"),
+        ("EPS Growth (Fwd vs TTM)","EPS Growth (%)",     "{:+.1f}%"),
+        ("Dividend Yield (%)",     "Dividend Yield (%)", "{:.2f}%"),
     ]
     for label, key, fmt in ratio_defs:
         val = ratios.get(key)
@@ -455,8 +460,8 @@ def generate_html_report(
           <tr><td>PV Terminal Value</td><td>{_v(pvt, "₹{{:,.0f}}")}</td></tr>
         </table>"""
 
-    # Explanation — strip markdown bold markers
-    expl_clean = explanation.replace("**", "").replace("  \n", "<br>")
+    # Explanation — strip markdown bold markers, then escape for safe HTML embedding
+    expl_clean = _html.escape(explanation.replace("**", "")).replace("  \n", "<br>")
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -593,13 +598,18 @@ def hero_card(name, ticker, sector, price, signal, emoji, score, explanation):
     col = sig_colors.get(signal, "#94a3b8")
     bg  = sig_bg.get(signal, "rgba(59,130,246,.1)")
     p   = f"₹{price:,.2f}" if price else "N/A"
+    # Escape external strings before embedding in HTML
+    s_name    = _html.escape(str(name))
+    s_ticker  = _html.escape(str(ticker))
+    s_sector  = _html.escape(str(sector))
+    s_expl    = _html.escape(str(explanation))
     st.markdown(f"""
 <div class="hero-card">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px">
     <div>
-      <div style="color:#475569;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">{sector}</div>
-      <div style="font-size:1.75rem;font-weight:800;color:#f1f5f9;line-height:1.1">{name}</div>
-      <div style="color:#475569;font-size:.85rem;margin-top:5px">NSE &nbsp;·&nbsp; <strong style="color:#93c5fd">{ticker}</strong></div>
+      <div style="color:#475569;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">{s_sector}</div>
+      <div style="font-size:1.75rem;font-weight:800;color:#f1f5f9;line-height:1.1">{s_name}</div>
+      <div style="color:#475569;font-size:.85rem;margin-top:5px">NSE &nbsp;·&nbsp; <strong style="color:#93c5fd">{s_ticker}</strong></div>
     </div>
     <div style="text-align:right">
       <div style="font-size:2.1rem;font-weight:800;color:#f1f5f9;font-variant-numeric:tabular-nums">{p}</div>
@@ -609,7 +619,7 @@ def hero_card(name, ticker, sector, price, signal, emoji, score, explanation):
       <div style="color:#475569;font-size:.78rem;margin-top:8px">Value Score &nbsp;<strong style="color:{col}">{score}/100</strong></div>
     </div>
   </div>
-  <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(59,130,246,0.12);color:#64748b;font-size:.82rem;line-height:1.5">{explanation[:200]}{"…" if len(explanation)>200 else ""}</div>
+  <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(59,130,246,0.12);color:#64748b;font-size:.82rem;line-height:1.5">{s_expl[:200]}{"…" if len(s_expl)>200 else ""}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1090,9 +1100,15 @@ def render_analysis():
         if fcf_ps and fcf_ps > 0:
             st.markdown(f"Using Free Cash Flow per share: **₹{fcf_ps:.2f}**")
         else:
+            if fcf_ps is not None and fcf_ps < 0:
+                st.warning(
+                    f"Free Cash Flow per share is negative (₹{fcf_ps:.2f}). "
+                    "DCF requires positive FCF — falling back to EPS or ₹1. "
+                    "Adjust the Base FCF/Share slider below to a realistic estimate."
+                )
             if eps and eps > 0:
                 fcf_ps = eps
-                st.info(f"FCF unavailable — using EPS (₹{eps:.2f}) as proxy.")
+                st.info(f"Using EPS (₹{eps:.2f}) as FCF proxy.")
             else:
                 fcf_ps = 1.0
                 st.warning("No FCF or EPS data. Defaulting to ₹1 — please adjust.")
@@ -1123,7 +1139,7 @@ def render_analysis():
         res = calculate_dcf(fcf_in, g1, yr1, g2, yr2, gT, w)
         st.session_state["_dcf_res"]    = res
         st.session_state["_dcf_params"] = dict(fcf_in=fcf_in, g1=g1, yr1=yr1, g2=g2,
-                                                yr2=yr2, wp=wp, price=price)
+                                                yr2=yr2, gT=gT, wp=wp, price=price)
 
         if not res:
             st.error("WACC must be higher than the terminal growth rate.")
@@ -1214,17 +1230,18 @@ def render_analysis():
             _yr1 = _dcf_prm.get("yr1", 0)
             _g2 = _dcf_prm.get("g2", 0)
             _yr2 = _dcf_prm.get("yr2", 0)
+            _gT = _dcf_prm.get("gT", 0.035)   # actual terminal growth used in base DCF
             _wp = _dcf_prm.get("wp", 0)
             _base_w = _wp / 100
 
             # Bull case: lower WACC + higher terminal growth
-            bull_g = min(0.045, _g2 + 0.02)
+            bull_g = min(0.045, _gT + 0.02)
             bull_w = max(0.07, _base_w - 0.02)
             bull_res = calculate_dcf(_fcf_in, _g1, _yr1, _g2, _yr2, bull_g, bull_w)
             bull_iv = bull_res.get("intrinsic_value", base_iv)
 
             # Bear case: higher WACC + lower terminal growth
-            bear_g = max(0.01, _g2 - 0.02)
+            bear_g = max(0.01, _gT - 0.02)
             bear_w = min(0.18, _base_w + 0.02)
             bear_res = calculate_dcf(_fcf_in, _g1, _yr1, _g2, _yr2, bear_g, bear_w)
             bear_iv = bear_res.get("intrinsic_value", base_iv)
@@ -1256,7 +1273,7 @@ def render_analysis():
                 {"label": "Bull Case",  "value": bull_lbl,
                  "help": f"WACC {bull_w*100:.1f}% | Terminal {bull_g*100:.1f}%", "color": "#16a34a"},
                 {"label": "Base Case",  "value": base_lbl,
-                 "help": f"WACC {_base_w*100:.1f}% | Terminal {_g2*100:.1f}%", "color": "#3b82f6"},
+                 "help": f"WACC {_base_w*100:.1f}% | Terminal {_gT*100:.1f}%", "color": "#3b82f6"},
                 {"label": "Bear Case",  "value": bear_lbl,
                  "help": f"WACC {bear_w*100:.1f}% | Terminal {bear_g*100:.1f}%", "color": "#dc2626"},
                 {"label": "Implied Upside", "value": target_val,
@@ -1309,7 +1326,7 @@ def render_analysis():
                     scenario_rows = []
                     for lbl, iv, w, g in [
                         ("Bull", bull_iv, bull_w, bull_g),
-                        ("Base", base_iv, _base_w, _g2),
+                        ("Base", base_iv, _base_w, _gT),
                         ("Bear", bear_iv, bear_w, bear_g),
                     ]:
                         if _price and _price > 0:
@@ -1423,14 +1440,16 @@ def render_analysis():
                     badge = '<span style="background:rgba(148,163,184,.15);color:#94a3b8;border:1px solid #475569;padding:2px 9px;border-radius:12px;font-size:.7rem;font-weight:700">NEUTRAL</span>'
                     left_border = "#334155"
 
-                pub   = art.get("publisher") or ""
+                pub   = _html.escape(art.get("publisher") or "")
                 t_ago = _time_ago(art.get("time"))
-                link  = art.get("link") or ""
-                title = art.get("title", "")
+                raw_link = art.get("link") or ""
+                # Only allow http/https links — never javascript: or data: URIs
+                link  = raw_link if raw_link.startswith(("http://", "https://")) else ""
+                title = _html.escape(art.get("title", ""))
 
                 meta  = " · ".join(filter(None, [pub, t_ago]))
                 title_html = (
-                    f'<a href="{link}" target="_blank" '
+                    f'<a href="{link}" target="_blank" rel="noopener noreferrer" '
                     f'style="color:#e2e8f0;text-decoration:none;font-weight:600;font-size:.9rem">'
                     f'{title}</a>'
                     if link else
