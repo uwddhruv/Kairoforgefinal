@@ -858,55 +858,35 @@ def _render_landing():
 """, unsafe_allow_html=True)
 
     # ── Signal legend ─────────────────────────────────────────────────────
-    st.markdown("""
-<div style="background:rgba(15,23,42,0.5);border:1px solid rgba(59,130,246,0.12);
-  border-radius:14px;padding:20px 24px;margin-bottom:28px">
-  <div style="font-size:.7rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
-    color:#334155;margin-bottom:14px">INVESTMENT SIGNAL ENGINE</div>
-  <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">
+    st.markdown("<div style='font-size:.7rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;"
+                "color:#334155;margin-bottom:14px'>INVESTMENT SIGNAL ENGINE</div>",
+                unsafe_allow_html=True)
 
-    <div style="display:flex;align-items:center;gap:10px">
-      <div style="width:10px;height:10px;border-radius:50%;background:#16a34a;flex-shrink:0"></div>
-      <div>
-        <span style="font-weight:700;color:#4ade80;font-size:.82rem">STRONG BUY</span>
-        <span style="color:#334155;font-size:.75rem;margin-left:6px">Score ≥ 70</span>
-      </div>
-    </div>
-
-    <div style="display:flex;align-items:center;gap:10px">
-      <div style="width:10px;height:10px;border-radius:50%;background:#4ade80;flex-shrink:0"></div>
-      <div>
-        <span style="font-weight:700;color:#86efac;font-size:.82rem">BUY</span>
-        <span style="color:#334155;font-size:.75rem;margin-left:6px">Score 50–69</span>
-      </div>
-    </div>
-
-    <div style="display:flex;align-items:center;gap:10px">
-      <div style="width:10px;height:10px;border-radius:50%;background:#ca8a04;flex-shrink:0"></div>
-      <div>
-        <span style="font-weight:700;color:#fbbf24;font-size:.82rem">HOLD</span>
-        <span style="color:#334155;font-size:.75rem;margin-left:6px">Score 30–49</span>
-      </div>
-    </div>
-
-    <div style="display:flex;align-items:center;gap:10px">
-      <div style="width:10px;height:10px;border-radius:50%;background:#dc2626;flex-shrink:0"></div>
-      <div>
-        <span style="font-weight:700;color:#f87171;font-size:.82rem">AVOID</span>
-        <span style="color:#334155;font-size:.75rem;margin-left:6px">Score &lt; 30</span>
-      </div>
-    </div>
-
-    <div style="margin-left:auto;color:#1e293b;font-size:.75rem;border-left:1px solid rgba(59,130,246,0.1);
-      padding-left:20px">
-      Graham MoS <strong style="color:#475569">40 pts</strong> &nbsp;·&nbsp;
-      ROE Quality <strong style="color:#475569">25 pts</strong> &nbsp;·&nbsp;
-      P/E <strong style="color:#475569">20 pts</strong> &nbsp;·&nbsp;
-      D/E <strong style="color:#475569">15 pts</strong>
-    </div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+    # Signal badges in columns
+    sg1, sg2, sg3, sg4, sg5 = st.columns([1, 1, 1, 1, 2.5])
+    with sg1:
+        st.markdown("<span style='color:#4ade80;font-weight:700;font-size:.82rem'>● STRONG BUY</span><br>"
+                    "<span style='color:#334155;font-size:.75rem'>Score ≥ 70</span>",
+                    unsafe_allow_html=True)
+    with sg2:
+        st.markdown("<span style='color:#86efac;font-weight:700;font-size:.82rem'>● BUY</span><br>"
+                    "<span style='color:#334155;font-size:.75rem'>Score 50–69</span>",
+                    unsafe_allow_html=True)
+    with sg3:
+        st.markdown("<span style='color:#fbbf24;font-weight:700;font-size:.82rem'>● HOLD</span><br>"
+                    "<span style='color:#334155;font-size:.75rem'>Score 30–49</span>",
+                    unsafe_allow_html=True)
+    with sg4:
+        st.markdown("<span style='color:#f87171;font-weight:700;font-size:.82rem'>● AVOID</span><br>"
+                    "<span style='color:#334155;font-size:.75rem'>Score &lt; 30</span>",
+                    unsafe_allow_html=True)
+    with sg5:
+        st.markdown("<span style='color:#475569;font-size:.75rem;'>"
+                    "Graham MoS <strong style='color:#94a3b8'>40 pts</strong> &nbsp;·&nbsp;"
+                    "ROE Quality <strong style='color:#94a3b8'>25 pts</strong> &nbsp;·&nbsp;"
+                    "P/E <strong style='color:#94a3b8'>20 pts</strong> &nbsp;·&nbsp;"
+                    "D/E <strong style='color:#94a3b8'>15 pts</strong></span>",
+                    unsafe_allow_html=True)
 
     # ── Screener launch panel ─────────────────────────────────────────────
     st.markdown("""
