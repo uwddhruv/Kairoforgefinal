@@ -713,36 +713,291 @@ def page_header(title: str, subtitle: str = ""):
 # PAGE: SCREENER
 # ═══════════════════════════════════════════════════════════════════════════
 def render_screener():
+
+    # ── LANDING STATE ─────────────────────────────────────────────────────
+    if st.session_state.screener_df is None:
+        _render_landing()
+        return
+
+    # ── ACTIVE SCREENER ───────────────────────────────────────────────────
+    _render_screener_results()
+
+
+def _render_landing():
+    """Full-page landing experience shown before the screener is run."""
+
+    # ── Hero section ──────────────────────────────────────────────────────
+    st.markdown(f"""
+<div style="
+  background: linear-gradient(135deg, rgba(13,18,36,0.98) 0%, rgba(15,27,58,0.95) 50%, rgba(10,15,30,0.98) 100%);
+  border: 1px solid rgba(59,130,246,0.25);
+  border-radius: 20px;
+  padding: 52px 48px 44px;
+  margin-bottom: 28px;
+  position: relative;
+  overflow: hidden;
+">
+  <!-- glow blobs -->
+  <div style="position:absolute;top:-60px;right:-60px;width:280px;height:280px;
+    background:radial-gradient(circle,rgba(59,130,246,0.18) 0%,transparent 70%);pointer-events:none"></div>
+  <div style="position:absolute;bottom:-80px;left:-40px;width:240px;height:240px;
+    background:radial-gradient(circle,rgba(139,92,246,0.12) 0%,transparent 70%);pointer-events:none"></div>
+
+  <!-- brand line -->
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:22px">
+    <div style="width:3px;height:32px;background:linear-gradient(180deg,#3b82f6,#8b5cf6);border-radius:2px"></div>
+    <span style="font-size:.75rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+      color:#3b82f6;font-family:'Inter',sans-serif">KAIROFORGE · EQUITY RESEARCH TERMINAL</span>
+  </div>
+
+  <!-- headline -->
+  <h1 style="font-size:2.6rem;font-weight:900;color:#f8fafc;line-height:1.15;margin:0 0 16px;
+    font-family:'Inter',sans-serif;letter-spacing:-0.02em">
+    Find undervalued Indian stocks<br>
+    <span style="background:linear-gradient(90deg,#3b82f6,#8b5cf6,#06b6d4);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">
+      before the market does.
+    </span>
+  </h1>
+
+  <!-- sub -->
+  <p style="color:#64748b;font-size:1.05rem;line-height:1.6;margin:0 0 36px;max-width:600px">
+    Institutional-grade screening across <strong style="color:#93c5fd">{len(STOCKS)} Nifty stocks</strong> —
+    Graham Number, 3-stage DCF, sensitivity analysis and news sentiment, all in one terminal.
+  </p>
+
+  <!-- feature pills -->
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:36px">
+    {"".join(f'''<span style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);
+      border-radius:20px;padding:5px 14px;font-size:.78rem;color:#93c5fd;font-weight:600">{t}</span>'''
+      for t in ["Graham Number","3-Stage DCF","Sensitivity Heatmap","News & Sentiment",
+                "Peer Comparison","Price Targets","HTML Reports","Live NSE Data"])}
+  </div>
+
+  <!-- CTA -->
+  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+    <div style="background:linear-gradient(135deg,#1d4ed8,#3b82f6);border-radius:10px;
+      padding:13px 28px;font-weight:700;font-size:1rem;color:#fff;display:inline-block;
+      box-shadow:0 6px 24px rgba(59,130,246,0.4)">
+      🚀 &nbsp;Run the screener below to begin
+    </div>
+    <span style="color:#334155;font-size:.85rem">~20 seconds · live Yahoo Finance data</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    # ── Stats row ─────────────────────────────────────────────────────────
+    st.markdown("""
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:28px">
+
+  <div style="background:rgba(15,23,42,0.7);border:1px solid rgba(59,130,246,0.18);
+    border-radius:14px;padding:20px 22px;text-align:center">
+    <div style="font-size:2rem;font-weight:800;color:#3b82f6;font-variant-numeric:tabular-nums">120+</div>
+    <div style="color:#475569;font-size:.78rem;font-weight:600;text-transform:uppercase;
+      letter-spacing:.07em;margin-top:4px">NSE Stocks</div>
+    <div style="color:#1e3a5f;font-size:.7rem;margin-top:3px">Nifty universe</div>
+  </div>
+
+  <div style="background:rgba(15,23,42,0.7);border:1px solid rgba(139,92,246,0.2);
+    border-radius:14px;padding:20px 22px;text-align:center">
+    <div style="font-size:2rem;font-weight:800;color:#8b5cf6">4</div>
+    <div style="color:#475569;font-size:.78rem;font-weight:600;text-transform:uppercase;
+      letter-spacing:.07em;margin-top:4px">Scoring Factors</div>
+    <div style="color:#1e3a5f;font-size:.7rem;margin-top:3px">Graham · ROE · P/E · D/E</div>
+  </div>
+
+  <div style="background:rgba(15,23,42,0.7);border:1px solid rgba(6,182,212,0.2);
+    border-radius:14px;padding:20px 22px;text-align:center">
+    <div style="font-size:2rem;font-weight:800;color:#06b6d4">0-100</div>
+    <div style="color:#475569;font-size:.78rem;font-weight:600;text-transform:uppercase;
+      letter-spacing:.07em;margin-top:4px">Value Score</div>
+    <div style="color:#1e3a5f;font-size:.7rem;margin-top:3px">Proprietary ranking</div>
+  </div>
+
+  <div style="background:rgba(15,23,42,0.7);border:1px solid rgba(34,197,94,0.2);
+    border-radius:14px;padding:20px 22px;text-align:center">
+    <div style="font-size:2rem;font-weight:800;color:#22c55e">3</div>
+    <div style="color:#475569;font-size:.78rem;font-weight:600;text-transform:uppercase;
+      letter-spacing:.07em;margin-top:4px">DCF Stages</div>
+    <div style="color:#1e3a5f;font-size:.7rem;margin-top:3px">Growth · Transition · Terminal</div>
+  </div>
+
+</div>
+""", unsafe_allow_html=True)
+
+    # ── Feature cards ─────────────────────────────────────────────────────
+    st.markdown("""
+<div style="margin-bottom:28px">
+  <div style="font-size:.7rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+    color:#334155;margin-bottom:16px">WHAT YOU GET</div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+
+    <div style="background:rgba(29,78,216,0.08);border:1px solid rgba(59,130,246,0.2);
+      border-radius:14px;padding:20px 20px">
+      <div style="font-size:1.5rem;margin-bottom:10px">📊</div>
+      <div style="font-weight:700;color:#e2e8f0;font-size:.9rem;margin-bottom:6px">Value Screener</div>
+      <div style="color:#475569;font-size:.78rem;line-height:1.55">Rank all 120+ stocks by Value Opportunity Score. Filter by signal strength and data quality. Export to CSV.</div>
+    </div>
+
+    <div style="background:rgba(139,92,246,0.07);border:1px solid rgba(139,92,246,0.2);
+      border-radius:14px;padding:20px 20px">
+      <div style="font-size:1.5rem;margin-bottom:10px">💹</div>
+      <div style="font-weight:700;color:#e2e8f0;font-size:.9rem;margin-bottom:6px">Deep Valuation</div>
+      <div style="color:#475569;font-size:.78rem;line-height:1.55">Graham Number, 3-stage DCF with custom growth sliders, WACC auto-estimation, and sensitivity heatmap.</div>
+    </div>
+
+    <div style="background:rgba(6,182,212,0.06);border:1px solid rgba(6,182,212,0.18);
+      border-radius:14px;padding:20px 20px">
+      <div style="font-size:1.5rem;margin-bottom:10px">🎯</div>
+      <div style="font-weight:700;color:#e2e8f0;font-size:.9rem;margin-bottom:6px">Price Targets</div>
+      <div style="color:#475569;font-size:.78rem;line-height:1.55">Bull / Base / Bear DCF scenarios with visual range bar, upside %, and scenario breakdown table.</div>
+    </div>
+
+    <div style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.18);
+      border-radius:14px;padding:20px 20px">
+      <div style="font-size:1.5rem;margin-bottom:10px">📰</div>
+      <div style="font-weight:700;color:#e2e8f0;font-size:.9rem;margin-bottom:6px">News & Sentiment</div>
+      <div style="color:#475569;font-size:.78rem;line-height:1.55">Live Yahoo Finance headlines with keyword-based sentiment scoring. Bullish / Bearish / Neutral classification.</div>
+    </div>
+
+    <div style="background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.18);
+      border-radius:14px;padding:20px 20px">
+      <div style="font-size:1.5rem;margin-bottom:10px">🔄</div>
+      <div style="font-weight:700;color:#e2e8f0;font-size:.9rem;margin-bottom:6px">Peer Comparison</div>
+      <div style="color:#475569;font-size:.78rem;line-height:1.55">Side-by-side P/E, P/B, ROE, D/E and Value Score vs sector peers. Radar chart and ranking table.</div>
+    </div>
+
+    <div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.15);
+      border-radius:14px;padding:20px 20px">
+      <div style="font-size:1.5rem;margin-bottom:10px">⬇️</div>
+      <div style="font-weight:700;color:#e2e8f0;font-size:.9rem;margin-bottom:6px">Research Reports</div>
+      <div style="color:#475569;font-size:.78rem;line-height:1.55">Download self-contained HTML reports per stock — all ratios, DCF, Graham and signal summary. Print-ready.</div>
+    </div>
+
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    # ── Signal legend ─────────────────────────────────────────────────────
+    st.markdown("""
+<div style="background:rgba(15,23,42,0.5);border:1px solid rgba(59,130,246,0.12);
+  border-radius:14px;padding:20px 24px;margin-bottom:28px">
+  <div style="font-size:.7rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+    color:#334155;margin-bottom:14px">INVESTMENT SIGNAL ENGINE</div>
+  <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">
+
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="width:10px;height:10px;border-radius:50%;background:#16a34a;flex-shrink:0"></div>
+      <div>
+        <span style="font-weight:700;color:#4ade80;font-size:.82rem">STRONG BUY</span>
+        <span style="color:#334155;font-size:.75rem;margin-left:6px">Score ≥ 70</span>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="width:10px;height:10px;border-radius:50%;background:#4ade80;flex-shrink:0"></div>
+      <div>
+        <span style="font-weight:700;color:#86efac;font-size:.82rem">BUY</span>
+        <span style="color:#334155;font-size:.75rem;margin-left:6px">Score 50–69</span>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="width:10px;height:10px;border-radius:50%;background:#ca8a04;flex-shrink:0"></div>
+      <div>
+        <span style="font-weight:700;color:#fbbf24;font-size:.82rem">HOLD</span>
+        <span style="color:#334155;font-size:.75rem;margin-left:6px">Score 30–49</span>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="width:10px;height:10px;border-radius:50%;background:#dc2626;flex-shrink:0"></div>
+      <div>
+        <span style="font-weight:700;color:#f87171;font-size:.82rem">AVOID</span>
+        <span style="color:#334155;font-size:.75rem;margin-left:6px">Score &lt; 30</span>
+      </div>
+    </div>
+
+    <div style="margin-left:auto;color:#1e293b;font-size:.75rem;border-left:1px solid rgba(59,130,246,0.1);
+      padding-left:20px">
+      Graham MoS <strong style="color:#475569">40 pts</strong> &nbsp;·&nbsp;
+      ROE Quality <strong style="color:#475569">25 pts</strong> &nbsp;·&nbsp;
+      P/E <strong style="color:#475569">20 pts</strong> &nbsp;·&nbsp;
+      D/E <strong style="color:#475569">15 pts</strong>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    # ── Screener launch panel ─────────────────────────────────────────────
+    st.markdown("""
+<div style="background:linear-gradient(135deg,rgba(29,78,216,0.12),rgba(139,92,246,0.08));
+  border:1px solid rgba(59,130,246,0.3);border-radius:16px;padding:28px 32px;margin-bottom:8px">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px">
+    <div>
+      <div style="font-weight:800;color:#e2e8f0;font-size:1.05rem;margin-bottom:4px">
+        Ready to scan the market?
+      </div>
+      <div style="color:#475569;font-size:.83rem">
+        Fetches live fundamentals for all stocks · Results cached for 5 min · First run ~20 s
+      </div>
+    </div>
+    <div style="color:#334155;font-size:.78rem;text-align:right">
+      <div>📡 &nbsp;Yahoo Finance API</div>
+      <div style="margin-top:3px">⚡ &nbsp;15 parallel threads</div>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    run_btn = st.button("🚀  Run Full Screener — Scan All Stocks", type="primary",
+                        use_container_width=True,
+                        help="Fetches live data for all stocks — takes ~20 seconds on first run.")
+    if run_btn:
+        pb  = st.progress(0.0)
+        stx = st.empty()
+        with st.spinner("Analysing fundamentals across all NSE stocks…"):
+            df = run_screener(STOCKS, progress_bar=pb, status_text=stx)
+        pb.empty(); stx.empty()
+        if df.empty:
+            st.error("Screener returned no results. Check your internet connection.")
+        else:
+            st.session_state.screener_df = df
+            st.rerun()
+
+    # ── Disclaimer ────────────────────────────────────────────────────────
+    st.markdown("""
+<div style="text-align:center;color:#1e293b;font-size:.72rem;margin-top:20px">
+  ⚠️ For educational purposes only — not financial advice. &nbsp;·&nbsp;
+  Data via Yahoo Finance. Accuracy not guaranteed. &nbsp;·&nbsp;
+  Always consult a qualified financial adviser before investing.
+</div>
+""", unsafe_allow_html=True)
+
+
+def _render_screener_results():
+    """Screener results view — shown after the screener has been run."""
     page_header("📊 Value Screener",
                 f"Ranks {len(STOCKS)} NSE companies by fundamental value. Scores combine Graham safety, ROE quality, P/E, and debt levels.")
 
-    # How it works
-    with st.expander("ℹ️ How does the scoring work?", expanded=False):
-        st.markdown("""
-| What we check | Plain English | Weight |
-|---|---|---|
-| **Graham Number margin of safety** | Is the stock cheaper than what Graham's formula says it's worth? | 40 pts |
-| **Return on Equity (ROE)** | Is the company earning good returns on shareholder money? | 25 pts |
-| **Price-to-Earnings (P/E)** | Are you paying a fair price relative to earnings? | 20 pts |
-| **Debt level (D/E)** | Is the balance sheet safe? | 15 pts |
-
-**Score → Signal:** ≥70 = 🟢 STRONG BUY · 50–69 = BUY · 30–49 = HOLD · <30 = 🔴 AVOID
-        """)
-
-    # Controls
-    ctrl1, ctrl2, ctrl3 = st.columns([1.2, 2.5, 1.3])
+    # Controls row
+    ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([1, 1.2, 2.2, 1.3])
     with ctrl1:
-        run_btn = st.button("🚀 Run Screener", type="primary", use_container_width=True,
-                            help="Fetches live data for all stocks — takes ~20 seconds on first run.")
+        run_btn = st.button("🔄 Re-run", type="primary", use_container_width=True,
+                            help="Re-fetches live data for all stocks.")
     with ctrl2:
+        if st.button("🏠 Back to Overview", use_container_width=True):
+            st.session_state.screener_df = None
+            st.rerun()
+    with ctrl3:
         signal_filter = st.radio(
             "Show",
             ["All stocks", "BUY signals or better", "STRONG BUY only"],
             horizontal=True, label_visibility="collapsed",
         )
-    with ctrl3:
+    with ctrl4:
         quality_only = st.checkbox("Complete data only", value=True,
-            help="Hides stocks where EPS or Book Value is missing — scores for those are less reliable.")
+            help="Hides stocks where EPS or Book Value is missing.")
 
     # Run
     if run_btn:
@@ -756,14 +1011,6 @@ def render_screener():
         else:
             st.session_state.screener_df = df
             st.success(f"✅ Done — {len(df)} stocks analysed and ranked.")
-
-    if st.session_state.screener_df is None:
-        st.markdown("""
-<div class="glass-card" style="text-align:center;padding:40px">
-  <div style="font-size:2.5rem">📊</div>
-  <div style="color:#475569;margin-top:8px">Click <strong style="color:#93c5fd">Run Screener</strong> to fetch live data and rank all stocks by value opportunity.</div>
-</div>""", unsafe_allow_html=True)
-        return
 
     df_all  = st.session_state.screener_df
 
