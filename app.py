@@ -826,55 +826,34 @@ def _render_landing():
 """, unsafe_allow_html=True)
 
     # ── Feature cards ─────────────────────────────────────────────────────
-    st.markdown("""
-<div style="margin-bottom:28px">
-  <div style="font-size:.7rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
-    color:#334155;margin-bottom:16px">WHAT YOU GET</div>
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+    st.markdown("<div style='font-size:.7rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;"
+                "color:#334155;margin-bottom:16px'>WHAT YOU GET</div>",
+                unsafe_allow_html=True)
 
-    <div style="background:rgba(29,78,216,0.08);border:1px solid rgba(59,130,246,0.2);
-      border-radius:14px;padding:20px 20px">
-      <div style="font-size:1.5rem;margin-bottom:10px">📊</div>
-      <div style="font-weight:700;color:#e2e8f0;font-size:.9rem;margin-bottom:6px">Value Screener</div>
-      <div style="color:#475569;font-size:.78rem;line-height:1.55">Rank all 120+ stocks by Value Opportunity Score. Filter by signal strength and data quality. Export to CSV.</div>
-    </div>
-
-    <div style="background:rgba(139,92,246,0.07);border:1px solid rgba(139,92,246,0.2);
-      border-radius:14px;padding:20px 20px">
-      <div style="font-size:1.5rem;margin-bottom:10px">💹</div>
-      <div style="font-weight:700;color:#e2e8f0;font-size:.9rem;margin-bottom:6px">Deep Valuation</div>
-      <div style="color:#475569;font-size:.78rem;line-height:1.55">Graham Number, 3-stage DCF with custom growth sliders, WACC auto-estimation, and sensitivity heatmap.</div>
-    </div>
-
-    <div style="background:rgba(6,182,212,0.06);border:1px solid rgba(6,182,212,0.18);
-      border-radius:14px;padding:20px 20px">
-      <div style="font-size:1.5rem;margin-bottom:10px">🎯</div>
-      <div style="font-weight:700;color:#e2e8f0;font-size:.9rem;margin-bottom:6px">Price Targets</div>
-      <div style="color:#475569;font-size:.78rem;line-height:1.55">Bull / Base / Bear DCF scenarios with visual range bar, upside %, and scenario breakdown table.</div>
-    </div>
-
-    <div style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.18);
-      border-radius:14px;padding:20px 20px">
-      <div style="font-size:1.5rem;margin-bottom:10px">📰</div>
-      <div style="font-weight:700;color:#e2e8f0;font-size:.9rem;margin-bottom:6px">News & Sentiment</div>
-      <div style="color:#475569;font-size:.78rem;line-height:1.55">Live Yahoo Finance headlines with keyword-based sentiment scoring. Bullish / Bearish / Neutral classification.</div>
-    </div>
-
-    <div style="background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.18);
-      border-radius:14px;padding:20px 20px">
-      <div style="font-size:1.5rem;margin-bottom:10px">🔄</div>
-      <div style="font-weight:700;color:#e2e8f0;font-size:.9rem;margin-bottom:6px">Peer Comparison</div>
-      <div style="color:#475569;font-size:.78rem;line-height:1.55">Side-by-side P/E, P/B, ROE, D/E and Value Score vs sector peers. Radar chart and ranking table.</div>
-    </div>
-
-    <div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.15);
-      border-radius:14px;padding:20px 20px">
-      <div style="font-size:1.5rem;margin-bottom:10px">⬇️</div>
-      <div style="font-weight:700;color:#e2e8f0;font-size:.9rem;margin-bottom:6px">Research Reports</div>
-      <div style="color:#475569;font-size:.78rem;line-height:1.55">Download self-contained HTML reports per stock — all ratios, DCF, Graham and signal summary. Print-ready.</div>
-    </div>
-
-  </div>
+    _feature_cards = [
+        ("📊", "Value Screener", "Rank all 120+ stocks by Value Opportunity Score. Filter by signal strength and data quality. Export to CSV.",
+         "rgba(29,78,216,0.08)", "rgba(59,130,246,0.2)"),
+        ("💹", "Deep Valuation", "Graham Number, 3-stage DCF with custom growth sliders, WACC auto-estimation, and sensitivity heatmap.",
+         "rgba(139,92,246,0.07)", "rgba(139,92,246,0.2)"),
+        ("🎯", "Price Targets", "Bull / Base / Bear DCF scenarios with visual range bar, upside %, and scenario breakdown table.",
+         "rgba(6,182,212,0.06)", "rgba(6,182,212,0.18)"),
+        ("📰", "News & Sentiment", "Live Yahoo Finance headlines with keyword-based sentiment scoring. Bullish / Bearish / Neutral classification.",
+         "rgba(245,158,11,0.06)", "rgba(245,158,11,0.18)"),
+        ("🔄", "Peer Comparison", "Side-by-side P/E, P/B, ROE, D/E and Value Score vs sector peers. Radar chart and ranking table.",
+         "rgba(34,197,94,0.06)", "rgba(34,197,94,0.18)"),
+        ("⬇️", "Research Reports", "Download self-contained HTML reports per stock — all ratios, DCF, Graham and signal summary. Print-ready.",
+         "rgba(239,68,68,0.06)", "rgba(239,68,68,0.15)"),
+    ]
+    for i in range(0, 6, 3):
+        c1, c2, c3 = st.columns(3)
+        for col, (emoji, title, desc, bg, border) in zip([c1, c2, c3], _feature_cards[i:i+3]):
+            with col:
+                st.markdown(f"""
+<div style="background:{bg};border:1px solid {border};border-radius:14px;padding:20px;
+  margin-bottom:14px;height:100%">
+  <div style="font-size:1.5rem;margin-bottom:10px">{emoji}</div>
+  <div style="font-weight:700;color:#e2e8f0;font-size:.9rem;margin-bottom:6px">{title}</div>
+  <div style="color:#475569;font-size:.78rem;line-height:1.55">{desc}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1118,7 +1097,8 @@ display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap
     ex1, ex2 = st.columns(2)
     with ex1:
         st.download_button("⬇️ Download Results (CSV)", data=screener_to_csv(df_filt),
-                           file_name="kairoforge_screener.csv", mime="text/csv")
+                           file_name="kairoforge_screener.csv", mime="text/csv",
+                           key="dl_screener_csv")
     with ex2:
         st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
         st.caption(f"{len(df_filt)} result(s) visible. Run screener for more.")
@@ -1216,6 +1196,7 @@ def render_analysis():
         file_name=f"KAIROFORGE_{_safe_name}_{TICKER}.html",
         mime="text/html",
         help="Downloads a self-contained HTML report. Open in any browser to view or print as PDF.",
+        key="dl_report_html",
     )
 
     # Sub-tabs
