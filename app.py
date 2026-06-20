@@ -715,7 +715,12 @@ def page_header(title: str, subtitle: str = ""):
 # ═══════════════════════════════════════════════════════════════════════════
 def render_screener():
 
-    # ── LANDING STATE ─────────────────────────────────────────────────────
+    # ── NL SEARCH RESULTS STATE ───────────────────────────────────────────
+    if st.session_state.get("nl_results"):
+        _render_landing()
+        return
+
+    # ── LANDING STATE (no full screener ran yet)
     if st.session_state.screener_df is None:
         _render_landing()
         return
