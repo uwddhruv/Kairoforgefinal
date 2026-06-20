@@ -21,6 +21,7 @@ from valuation_models import (
 )
 from screener  import run_screener, generate_signal, score_stock as _score_stock
 from portfolio import screener_to_csv
+from nl_search import parse_nl_query, apply_nl_filters
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -824,6 +825,99 @@ def _render_landing():
 
 </div>
 """, unsafe_allow_html=True)
+
+    # ── Natural Language Search ─────────────────────────────────────────────────
+    st.markdown("""
+<div style="background:linear-gradient(135deg,rgba(16,185,129,0.08),rgba(59,130,246,0.06));
+  border:1px solid rgba(16,185,129,0.2);border-radius:16px;padding:24px 28px;margin-bottom:28px">
+  <div style="font-size:.7rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+    color:#334155;margin-bottom:12px">🔍 NATURAL LANGUAGE SEARCH</div>
+  <div style="color:#94a3b8;font-size:.8rem;margin-bottom:14px">
+    Type what you want in plain English — e.g. "undervalued healthcare stocks with low PE and high ROCE"
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    nl_query = st.text_input(
+        "Search stocks",
+        placeholder="undervalued healthcare stocks with low pe and high roce...",
+        label_visibility="collapsed",
+    )
+
+    nl_search_btn = st.button("🔎  Search", type="secondary", use_container_width=False)
+
+    if nl_search_btn and nl_query:
+        with st.spinner("Searching with natural language query..."):
+            criteria = parse_nl_query(nl_query)
+            # Run screener on the narrowed ticker pool
+            narrowed_stocks = {k: v for k, v in STOCKS.items() if v in criteria["tickers"]}
+            if not narrowed_stocks:
+                st.warning("No stocks matched the sector / industry filter. Try a broader query.")
+            else:
+                pb = st.progress(0.0)
+                stx = st.empty()
+                df = run_screener(narrowed_stocks, progress_bar=pb, status_text=stx)
+                pb.empty(); stx.empty()
+                if not df.empty:
+                    # Apply NL metric filters
+                    stock_list = df.to_dict("records")
+                    filtered = apply_nl_filters(stock_list, criteria)
+                    if filtered:
+                        st.session_state.nl_results = filtered
+                        st.session_state.nl_query = nl_query
+                        st.session_state.nl_explanation = criteria["explanation"]
+                        st.rerun()
+                    else:
+                        st.info(f"No stocks passed all filters for: {criteria['explanation']}")
+                else:
+                    st.error("Failed to fetch stock data. Check your connection.")
+
+    # Show NL results if available
+    if st.session_state.get("nl_results"):
+        st.markdown(f"""
+<div style="background:rgba(16,185,129,0.05);border:1px solid rgba(16,185,129,0.2);
+  border-radius:14px;padding:18px 22px;margin-bottom:18px">
+  <div style="font-weight:700;color:#e2e8f0;font-size:.95rem;margin-bottom:4px">
+    🔍 Results for: {st.session_state.nl_query}
+  </div>
+  <div style="color:#94a3b8;font-size:.78rem">{st.session_state.nl_explanation}</div>
+</div>
+""", unsafe_allow_html=True)
+
+        nl_df = pd.DataFrame(st.session_state.nl_results)
+        cols = ["Ticker", "Company", "Score", "Signal", "P/E", "D/E", "ROE (%)", "Beta", "MoS %", "Price (₹)"]
+        display_cols = {
+            "Ticker": "TICKER",
+            "Company": "COMPANY",
+            "Score": "SCORE",
+            "Signal": "SIGNAL",
+            "P/E": "P/E",
+            "D/E": "D/E",
+            "ROE (%)": "ROE %",
+            "Beta": "BETA",
+            "MoS %": "MoS %",
+            "Price (₹)": "PRICE",
+        }
+        st.dataframe(
+            nl_df[cols].rename(columns=display_cols),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "SCORE": st.column_config.NumberColumn(format="%.1f"),
+                "P/E": st.column_config.NumberColumn(format="%.1f"),
+                "D/E": st.column_config.NumberColumn(format="%.2f"),
+                "ROE %": st.column_config.NumberColumn(format="%.1f"),
+                "BETA": st.column_config.NumberColumn(format="%.2f"),
+                "MoS %": st.column_config.NumberColumn(format="%.1f"),
+                "PRICE": st.column_config.NumberColumn(format="₹%.2f"),
+            },
+        )
+
+        if st.button("Clear Search Results", type="tertiary"):
+            del st.session_state.nl_results
+            del st.session_state.nl_query
+            del st.session_state.nl_explanation
+            st.rerun()
 
     # ── Feature cards ─────────────────────────────────────────────────────
     st.markdown("<div style='font-size:.7rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;"
