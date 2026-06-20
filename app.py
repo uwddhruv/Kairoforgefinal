@@ -922,17 +922,16 @@ def _render_landing():
             },
         )
 
-        # Handle row click → navigate to stock analysis
-        if st.session_state.get("nl_table"):
-            sel = st.session_state.nl_table.get("selection", {})
-            rows = sel.get("rows", [])
-            if rows:
-                idx = rows[0]
-                ticker = nl_df.iloc[idx]["Ticker"]
-                st.session_state.analysis_ticker = ticker
-                st.session_state.nl_table = None
-                st.session_state.page = "📈  Stock Analysis"
-                st.rerun()
+        # Row selection → navigate to stock analysis
+        selected = st.session_state.get("nl_table", {})
+        if selected and selected.get("selection", {}).get("rows", []):
+            idx = selected["selection"]["rows"][0]
+            ticker = nl_df.iloc[idx]["Ticker"]
+            st.session_state.analysis_ticker = ticker
+            # Clear navigation state so we don't loop
+            st.session_state.nl_table = {"selection": {"rows": []}}
+            st.session_state.page = "📈  Stock Analysis"
+            st.rerun()
 
         if st.button("Clear Search Results", type="tertiary"):
             del st.session_state.nl_results
