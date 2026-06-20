@@ -66,7 +66,7 @@ METRIC_DEFAULTS: dict[str, dict[str, Any]] = {
     "growth":   {"low": 0.05, "high": 0.15, "strong": 0.15, "weak": 0.05, "good": 0.15, "bad": 0.05},
     "dividend": {"low": 0.01, "high": 0.02, "strong": 0.02, "weak": 0.01},
     "beta":     {"low": 0.8, "high": 1.2, "safe": 0.8, "risky": 1.2},
-    "graham":   {"low": 0.1, "high": 0.5, "cheap": 0.1, "expensive": 0.5, "strong": 0.1},
+    "graham":   {"low": 0, "high": 0.5, "cheap": 0, "expensive": 0.5, "strong": 0},
     "score":    {"low": 40, "high": 50, "strong": 50, "weak": 40, "good": 50, "bad": 35},
 }
 

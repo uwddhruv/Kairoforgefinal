@@ -111,10 +111,10 @@ def score_stock(ticker: str, name: str, info: dict) -> dict:
 
     # ── Graham MoS score (0-40) ───────────────────────────────
     mos_pct = 0.0
-    if graham and price:
+    if graham and price and graham > 0:
         mos_pct = (graham - price) / graham * 100   # + = undervalued
 
-    if graham and price and mos_pct > 0:
+    if graham and price and graham > 0 and mos_pct > 0:
         if mos_pct >= 40:   g_score = 40
         elif mos_pct >= 25: g_score = 30
         elif mos_pct >= 10: g_score = 20

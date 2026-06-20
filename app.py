@@ -138,6 +138,9 @@ hr { border-color: rgba(59,130,246,0.2) !important; }
 # ─────────────────────────────────────────────────────────────────────────────
 if "screener_df"     not in st.session_state: st.session_state.screener_df     = None
 if "analysis_ticker" not in st.session_state: st.session_state.analysis_ticker = None
+if "nl_results"      not in st.session_state: st.session_state.nl_results      = None
+if "nl_query"        not in st.session_state: st.session_state.nl_query        = None
+if "nl_explanation"  not in st.session_state: st.session_state.nl_explanation  = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -717,7 +720,7 @@ def page_header(title: str, subtitle: str = ""):
 def render_screener():
 
     # ── NL SEARCH RESULTS STATE ───────────────────────────────────────────
-    if st.session_state.get("nl_results"):
+    if st.session_state.get("nl_results") is not None:
         _render_landing()
         return
 
@@ -850,7 +853,7 @@ def _render_landing():
         label_visibility="collapsed",
     )
 
-    nl_search_btn = st.button("🔎  Search", type="secondary", use_container_width=False)
+    nl_search_btn = st.button("🔎  Search", type="secondary", width='content')
 
     if nl_search_btn and nl_query:
         with st.spinner("Searching with natural language query..."):
@@ -879,7 +882,7 @@ def _render_landing():
                     st.error("Failed to fetch stock data. Check your connection.")
 
     # Show NL results if available
-    if st.session_state.get("nl_results"):
+    if st.session_state.get("nl_results") is not None:
         st.markdown(f"""
 <div style="background:rgba(16,185,129,0.05);border:1px solid rgba(16,185,129,0.2);
   border-radius:14px;padding:18px 22px;margin-bottom:18px">
@@ -906,7 +909,7 @@ def _render_landing():
         }
         st.dataframe(
             nl_df[cols].rename(columns=display_cols),
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             key="nl_table",
             on_select="rerun",
@@ -923,20 +926,18 @@ def _render_landing():
         )
 
         # Row selection → navigate to stock analysis
-        selected = st.session_state.get("nl_table", {})
+        selected = st.session_state.get("nl_table")
         if selected and selected.get("selection", {}).get("rows", []):
             idx = selected["selection"]["rows"][0]
             ticker = nl_df.iloc[idx]["Ticker"]
             st.session_state.analysis_ticker = ticker
-            # Clear navigation state so we don't loop
-            st.session_state.nl_table = {"selection": {"rows": []}}
             st.session_state.page = "📈  Stock Analysis"
             st.rerun()
 
         if st.button("Clear Search Results", type="tertiary"):
-            del st.session_state.nl_results
-            del st.session_state.nl_query
-            del st.session_state.nl_explanation
+            st.session_state.nl_results = None
+            st.session_state.nl_query = None
+            st.session_state.nl_explanation = None
             st.rerun()
 
     # ── Feature cards ─────────────────────────────────────────────────────
@@ -1024,7 +1025,7 @@ def _render_landing():
 """, unsafe_allow_html=True)
 
     run_btn = st.button("🚀  Run Full Screener — Scan All Stocks", type="primary",
-                        use_container_width=True,
+                        width='stretch',
                         help="Fetches live data for all stocks — takes ~20 seconds on first run.")
     if run_btn:
         pb  = st.progress(0.0)
@@ -1056,10 +1057,10 @@ def _render_screener_results():
     # Controls row
     ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([1, 1.2, 2.2, 1.3])
     with ctrl1:
-        run_btn = st.button("🔄 Re-run", type="primary", use_container_width=True,
+        run_btn = st.button("🔄 Re-run", type="primary", width='stretch',
                             help="Re-fetches live data for all stocks.")
     with ctrl2:
-        if st.button("🏠 Back to Overview", use_container_width=True):
+        if st.button("🏠 Back to Overview", width='stretch'):
             st.session_state.screener_df = None
             st.rerun()
     with ctrl3:
@@ -1123,7 +1124,7 @@ def _render_screener_results():
         yaxis_title="# Stocks", yaxis={"gridcolor": "rgba(59,130,246,0.08)"},
         height=230, showlegend=False, **_DARK_LAYOUT,
     )
-    st.plotly_chart(sc_fig, use_container_width=True)
+    st.plotly_chart(sc_fig, width='stretch')
 
     # Top picks
     st.markdown("#### 🏆 Top Value Picks")
@@ -1153,15 +1154,15 @@ display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap
     <div style="color:#64748b;font-size:.78rem;margin-top:6px;line-height:1.4">{str(row.get('Explanation',''))[:120]}…</div>
   </div>
   <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">
-    <div style="text-align:center"><div style="color:#475569;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em">Price</div><div style="color:#f1f5f9;font-weight:700">{"₹"+f"{price:,.0f}" if price else "N/A"}</div></div>
-    <div style="text-align:center"><div style="color:#475569;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em">Fair Value</div><div style="color:#f1f5f9;font-weight:700">{"₹"+f"{graham:,.0f}" if graham else "N/A"}</div></div>
-    <div style="text-align:center"><div style="color:#475569;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em">MoS</div><div style="color:{"#22c55e" if mos>0 else "#ef4444"};font-weight:700">{mos:+.1f}%</div></div>
+    <div style="text-align:center"><div style="color:#475569;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em">Price</div><div style="color:#f1f5f9;font-weight:700">{"₹"+f"{price:,.0f}" if (price is not None and price == price) else "N/A"}</div></div>
+    <div style="text-align:center"><div style="color:#475569;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em">Fair Value</div><div style="color:#f1f5f9;font-weight:700">{"₹"+f"{graham:,.0f}" if (graham is not None and graham == graham) else "N/A"}</div></div>
+    <div style="text-align:center"><div style="color:#475569;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em">MoS</div><div style="color:{"#22c55e" if (mos is not None and mos > 0) else "#ef4444"};font-weight:700">{f"{mos:+.1f}%" if (mos is not None and mos == mos) else "N/A"}</div></div>
     <div style="text-align:center"><div style="color:#475569;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em">ROE</div><div style="color:#f1f5f9">{f"{roe:.1f}%" if roe is not None else "N/A"}</div></div>
     <div style="text-align:center"><div style="color:#475569;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em">Score</div><div style="color:{border};font-weight:700">{score}/100</div></div>
   </div>
 </div>""", unsafe_allow_html=True)
             if st.button(f"📈 Open Analysis — {row['Company'][:22]}", key=f"dd_{row['Ticker']}",
-                         use_container_width=False):
+                         width='content'):
                 st.session_state.analysis_ticker = row["Ticker"]
                 st.toast(f"✅ {row['Company']} loaded — switch to 📈 Stock Analysis", icon="✅")
 
@@ -1180,7 +1181,7 @@ display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap
         )
     with qb:
         st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-        if st.button("📈 Open Analysis", type="primary", use_container_width=True):
+        if st.button("📈 Open Analysis", type="primary", width='stretch'):
             if quick_pick != "— pick a company —":
                 match = df_filt[df_filt["Company"] == quick_pick]
                 if not match.empty:
@@ -1213,7 +1214,7 @@ def render_analysis():
         custom_t = st.text_input("Or enter NSE ticker", placeholder="e.g. ZOMATO.NS")
     with da3:
         st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-        analyse_btn = st.button("Analyse →", type="primary", use_container_width=True)
+        analyse_btn = st.button("Analyse →", type="primary", width='stretch')
 
     TICKER = None
     if custom_t.strip():
@@ -1277,6 +1278,15 @@ def render_analysis():
 
     # Export report button — always visible once a stock is loaded
     _dcf_for_report = st.session_state.get("_dcf_res")
+    _dcf_params = st.session_state.get("_dcf_params")
+    # If no DCF has been run yet, compute a default one for the report
+    if _dcf_for_report is None and price is not None:
+        _default_dcf = calculate_dcf(
+            fcf_ps=max(fcf_ps, 0.01),
+            g1=0.20, yr1=5, g2=0.10, yr2=5, gT=0.04,
+            wacc=wacc if wacc > 0.04 else 0.10,
+        )
+        _dcf_for_report = _default_dcf
     _report_html = generate_html_report(
         ticker=TICKER, name=name, sector=sector or industry or "",
         price=price, signal=q_signal, score=q_score, explanation=q_expl,
@@ -1324,7 +1334,7 @@ def render_analysis():
 
         st.markdown("")
         if not hist.empty:
-            st.plotly_chart(make_hist_chart(hist, TICKER), use_container_width=True)
+            st.plotly_chart(make_hist_chart(hist, TICKER), width='stretch')
         else:
             st.info("Historical price data unavailable.")
 
@@ -1358,12 +1368,12 @@ def render_analysis():
             gc, bc = st.columns(2)
             with gc:
                 st.plotly_chart(make_gauge(price, graham, "Price vs Graham Number"),
-                                use_container_width=True)
+                                width='stretch')
             with bc:
                 st.plotly_chart(make_bar_comp(
                     ["Current Price","Graham Number"], [price, graham],
                     ["#3b82f6","#22c55e" if is_under else "#ef4444"],
-                    "Price vs Graham Number (₹)"), use_container_width=True)
+                    "Price vs Graham Number (₹)"), width='stretch')
 
             with st.expander("🧮 Formula breakdown"):
                 st.markdown(f"""
@@ -1449,7 +1459,7 @@ def render_analysis():
             gTp = st.slider("Terminal growth %",1, 10, 4,  key="gTp")
         with d3:
             st.markdown("**Discount Rate (WACC)**")
-            wp  = st.slider("WACC %", 5, 25, int(round(wacc*100)), key="wp",
+            wp  = st.slider("WACC %", 5, 25, min(25, max(5, int(round(wacc*100)))), key="wp",
                              help=f"Auto-estimated: {wacc*100:.1f}% using CAPM (β={beta:.2f})")
             st.markdown(f"""
 <div class="glass-card" style="padding:12px 16px;font-size:.82rem">
@@ -1489,17 +1499,17 @@ def render_analysis():
 
             ch1, ch2 = st.columns(2)
             with ch1:
-                st.plotly_chart(make_dcf_waterfall(res), use_container_width=True)
+                st.plotly_chart(make_dcf_waterfall(res), width='stretch')
             with ch2:
                 st.plotly_chart(make_gauge(price, iv, "Price vs DCF Intrinsic Value"),
-                                use_container_width=True)
+                                width='stretch')
 
             with st.expander("📋 Year-by-year cash flow table"):
                 rows = [{"Year":yr,"FCF (₹)":f"₹{f:,.2f}","PV (₹)":f"₹{pv:,.2f}"}
                         for yr,f,pv in res["stage_cashflows"]]
                 rows.append({"Year":"Terminal","FCF (₹)":f"₹{res['terminal_value']:,.2f}",
                              "PV (₹)":f"₹{res['pv_terminal']:,.2f}"})
-                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
 
     # ── SENSITIVITY ───────────────────────────────────────────
     with sens:
@@ -1526,12 +1536,12 @@ def render_analysis():
                 )
 
             st.plotly_chart(make_sensitivity_heatmap(sdf, _prm["price"]),
-                            use_container_width=True)
+                            width='stretch')
 
             fmt_df = sdf.copy()
             for c in fmt_df.columns:
                 fmt_df[c] = fmt_df[c].apply(lambda v: f"₹{v:,.0f}" if pd.notna(v) else "—")
-            st.dataframe(fmt_df, use_container_width=True)
+            st.dataframe(fmt_df, width='stretch')
 
     # ── PRICE TARGET ───────────────────────────────────────────
     with pt_tab:
@@ -1663,7 +1673,7 @@ def render_analysis():
                             "WACC": f"{w*100:.1f}%",
                             "Terminal Growth": f"{g*100:.1f}%",
                         })
-                    st.dataframe(pd.DataFrame(scenario_rows), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(scenario_rows), width='stretch', hide_index=True)
 
                     # ── Bull / Base / Bear waterfall chart ──
                     pt_fig = go.Figure()
@@ -1685,7 +1695,7 @@ def render_analysis():
                         yaxis={"gridcolor": "rgba(59,130,246,0.08)", "title": "Intrinsic Value (₹)"},
                         height=320, showlegend=False, **_DARK_LAYOUT,
                     )
-                    st.plotly_chart(pt_fig, use_container_width=True)
+                    st.plotly_chart(pt_fig, width='stretch')
                 else:
                     st.warning("Bear and Bull cases are identical — assumptions are too narrow.")
             else:
@@ -1746,7 +1756,7 @@ def render_analysis():
                 yaxis={"gridcolor": "rgba(59,130,246,0.08)"},
                 height=220, showlegend=False, **_DARK_LAYOUT,
             )
-            st.plotly_chart(bar_fig, use_container_width=True)
+            st.plotly_chart(bar_fig, width='stretch')
 
             st.markdown("#### Recent Headlines")
 
@@ -1982,7 +1992,7 @@ padding:12px 16px;margin-bottom:8px">
                 xaxis={"tickangle": -25},
                 height=320, showlegend=False, **_DARK_LAYOUT,
             )
-            st.plotly_chart(cmp_fig, use_container_width=True)
+            st.plotly_chart(cmp_fig, width='stretch')
 
             # ── ROE vs P/E scatter ──────────────────────────────
             sc_x, sc_y, sc_t, sc_c, sc_s = [], [], [], [], []
@@ -2022,7 +2032,7 @@ padding:12px 16px;margin-bottom:8px">
                            "gridcolor": "rgba(59,130,246,0.08)"},
                     height=340, **_DARK_LAYOUT,
                 )
-                st.plotly_chart(scat_fig, use_container_width=True)
+                st.plotly_chart(scat_fig, width='stretch')
 
 
 # ─────────────────────────────────────────────────────────────────────────────
