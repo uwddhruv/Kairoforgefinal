@@ -14,16 +14,16 @@ from stocks import SECTOR_PEERS, INDUSTRY_PEERS, STOCKS
 # ── Keyword lexicons ─────────────────────────────────────────────────────────
 
 SECTOR_ALIASES: dict[str, list[str]] = {
-    "technology":       ["tech", "it", "software", "digital", "infotech", "information technology"],
-    "financial services": ["bank", "banks", "finance", "nbfc", "insurance", "fintech", "lending", "asset management"],
-    "healthcare":       ["pharma", "pharmaceutical", "pharmaceuticals", "medicine", "drug", "hospital", "hospitals", "medical", "health", "biotech"],
-    "consumer cyclical": ["auto", "automotive", "car", "vehicles", "retail", "fashion", "luxury", "apparel", "jewellery", "titan", "trent", "food service", "restaurant", "travel", "airline", "airlines"],
-    "consumer defensive": ["fmcg", "consumer", "food", "beverage", "tobacco", "personal care", "household", "nestle", "itc", "hul", "hindustan unilever"],
-    "energy":           ["oil", "gas", "petroleum", "coal", "mining", "energy"],
-    "utilities":        ["power", "electric", "electricity", "renewable", "solar", "wind", "grid", "ntpc", "powergrid", "adani green"],
-    "basic materials":  ["steel", "metal", "metals", "aluminium", "aluminum", "iron", "cement", "paint", "chemical", "grasim", "ultratech", "tata steel", "jsw steel"],
-    "industrials":      ["infra", "infrastructure", "construction", "engineering", "defence", "defense", "aerospace", "logistics", "ports", "shipping", "lt", "larsen", "bel", "hal"],
-    "communication services": ["telecom", "telecommunication", "internet", "media", "bharti", "airtel", "naukri", "nykaa"],
+    "Technology":            ["tech", "it", "software", "digital", "infotech", "information technology"],
+    "Financial Services":    ["bank", "banks", "finance", "nbfc", "insurance", "fintech", "lending", "asset management"],
+    "Healthcare":            ["pharma", "pharmaceutical", "pharmaceuticals", "medicine", "drug", "hospital", "hospitals", "medical", "health", "biotech"],
+    "Consumer Cyclical":     ["auto", "automotive", "car", "vehicles", "retail", "fashion", "luxury", "apparel", "jewellery", "titan", "trent", "food service", "restaurant", "travel", "airline", "airlines"],
+    "Consumer Defensive":    ["fmcg", "consumer", "food", "beverage", "tobacco", "personal care", "household", "nestle", "itc", "hul", "hindustan unilever"],
+    "Energy":                ["oil", "gas", "petroleum", "coal", "mining", "energy"],
+    "Utilities":             ["power", "electric", "electricity", "renewable", "solar", "wind", "grid", "ntpc", "powergrid", "adani green"],
+    "Basic Materials":       ["steel", "metal", "metals", "aluminium", "aluminum", "iron", "cement", "paint", "chemical", "grasim", "ultratech", "tata steel", "jsw steel"],
+    "Industrials":           ["infra", "infrastructure", "construction", "engineering", "defence", "defense", "aerospace", "logistics", "ports", "shipping", "lt", "larsen", "bel", "hal"],
+    "Communication Services": ["telecom", "telecommunication", "internet", "media", "bharti", "airtel", "naukri", "nykaa"],
 }
 
 METRIC_ALIASES: dict[str, list[str]] = {
@@ -57,8 +57,8 @@ QUALIFIER_THRESHOLDS: dict[str, dict[str, Any]] = {
 
 # Default thresholds per metric (metric_key -> {qualifier: threshold_value})
 METRIC_DEFAULTS: dict[str, dict[str, Any]] = {
-    "pe":       {"low": 15, "high": 25, "cheap": 15, "expensive": 30, "safe": 15, "risky": 30},
-    "pb":       {"low": 2, "high": 3, "cheap": 2, "expensive": 4, "safe": 2, "risky": 4},
+    "pe":       {"low": 25, "high": 30, "cheap": 25, "expensive": 35, "safe": 25, "risky": 35},
+    "pb":       {"low": 3, "high": 4, "cheap": 3, "expensive": 5, "safe": 3, "risky": 5},
     "roe":      {"low": 0.10, "high": 0.15, "strong": 0.15, "weak": 0.10, "good": 0.15, "bad": 0.10},
     "roce":     {"low": 0.10, "high": 0.15, "strong": 0.15, "weak": 0.10, "good": 0.15, "bad": 0.10},
     "de":       {"low": 0.5, "high": 1.0, "safe": 0.5, "risky": 1.0},
@@ -66,32 +66,25 @@ METRIC_DEFAULTS: dict[str, dict[str, Any]] = {
     "growth":   {"low": 0.05, "high": 0.15, "strong": 0.15, "weak": 0.05, "good": 0.15, "bad": 0.05},
     "dividend": {"low": 0.01, "high": 0.02, "strong": 0.02, "weak": 0.01},
     "beta":     {"low": 0.8, "high": 1.2, "safe": 0.8, "risky": 1.2},
-    "graham":   {"low": 0.3, "high": 0.5, "cheap": 0.3, "expensive": 0.5, "strong": 0.3},
-    "score":    {"low": 40, "high": 60, "strong": 60, "weak": 40, "good": 60, "bad": 40},
+    "graham":   {"low": 0.1, "high": 0.5, "cheap": 0.1, "expensive": 0.5, "strong": 0.1},
+    "score":    {"low": 40, "high": 50, "strong": 50, "weak": 40, "good": 50, "bad": 35},
 }
 
 # Broad qualifiers that apply to a predefined set of metrics
 BROAD_QUALIFIERS: dict[str, dict[str, Any]] = {
     "undervalued": {
-        "pe": {"op": "lt", "value": 15},
-        "pb": {"op": "lt", "value": 2},
-        "graham": {"op": "gt", "value": 0.3},
-        "score": {"op": "gt", "value": 60},
+        "pe": {"op": "lt", "value": 25},
+        "score": {"op": "gt", "value": 40},
     },
     "overvalued": {
         "pe": {"op": "gt", "value": 30},
-        "pb": {"op": "gt", "value": 4},
-        "graham": {"op": "lt", "value": 0.5},
     },
     "cheap": {
-        "pe": {"op": "lt", "value": 15},
-        "pb": {"op": "lt", "value": 2},
-        "graham": {"op": "gt", "value": 0.3},
+        "pe": {"op": "lt", "value": 25},
+        "score": {"op": "gt", "value": 40},
     },
     "expensive": {
         "pe": {"op": "gt", "value": 30},
-        "pb": {"op": "gt", "value": 4},
-        "graham": {"op": "lt", "value": 0.5},
     },
 }
 
@@ -111,21 +104,31 @@ def _word_match(text: str, word: str) -> bool:
     return bool(re.search(pattern, text.lower()))
 
 
-def _find_qualifiers_near_metric(q: str, metric_alias: str) -> list[str]:
-    """Find all qualifiers that appear within a window of words around the metric."""
+def _find_closest_qualifier(q: str, metric_alias: str) -> str | None:
+    """Find the qualifier closest to the metric in the query.
+
+    For a phrase like "low pe and high roce", when looking for the qualifier
+    near "pe", it finds "low" (distance 0). When looking for the qualifier
+    near "roce", it finds "high" (distance 0) and ignores "low" (distance 5).
+    """
     words = q.lower().split()
     metric_words = metric_alias.lower().split()
-    qualifiers = list(QUALIFIER_THRESHOLDS.keys())
-    found = []
+    qualifiers = set(QUALIFIER_THRESHOLDS.keys())
+    closest_qual = None
+    closest_dist = float("inf")
+
     for i in range(len(words)):
         chunk = " ".join(words[i:i + len(metric_words)])
         if chunk == metric_alias.lower():
-            window_start = max(0, i - 5)
-            window_end = min(len(words), i + len(metric_words) + 5)
-            for w in words[window_start:window_end]:
-                if w in qualifiers and w not in found:
-                    found.append(w)
-    return found
+            # Metric found at index i. Find the closest qualifier.
+            for j, w in enumerate(words):
+                if w in qualifiers:
+                    # Distance from qualifier to metric start
+                    dist = abs(j - i)
+                    if dist < closest_dist:
+                        closest_dist = dist
+                        closest_qual = w
+    return closest_qual
 
 
 # ── Query parsing ─────────────────────────────────────────────────────────────
@@ -198,20 +201,35 @@ def parse_nl_query(query: str) -> dict[str, Any]:
     else:
         criteria["tickers"] = list(STOCKS.values())
 
-    # ── 4. Metric + qualifier detection (nearby pairing) ─────────────
+    # ── 4. Metric + qualifier detection (closest-pairing) ────────────
     for metric_key, aliases in METRIC_ALIASES.items():
+        matched = False
         for alias in aliases:
-            if alias in q:
-                nearby_quals = _find_qualifiers_near_metric(q, alias)
-                for qual in nearby_quals:
+            if _word_match(q, alias):
+                qual = _find_closest_qualifier(q, alias)
+                if qual:
                     defaults = METRIC_DEFAULTS.get(metric_key, {})
                     val = defaults.get(qual)
                     if val is not None:
                         direction = QUALIFIER_THRESHOLDS[qual]["_direction"]
                         criteria["metrics"][metric_key] = {"op": direction, "value": val}
                         matched_parts.append(f"{qual} {metric_key}")
+                        matched = True
                         break
-                break
+            # If the alias is a substring but not a word match, try exact word match
+            elif len(alias) >= 3 and alias in q:
+                qual = _find_closest_qualifier(q, alias)
+                if qual:
+                    defaults = METRIC_DEFAULTS.get(metric_key, {})
+                    val = defaults.get(qual)
+                    if val is not None:
+                        direction = QUALIFIER_THRESHOLDS[qual]["_direction"]
+                        criteria["metrics"][metric_key] = {"op": direction, "value": val}
+                        matched_parts.append(f"{qual} {metric_key}")
+                        matched = True
+                        break
+        if matched:
+            continue
 
     # ── 5. Broad qualifiers (undervalued, overvalued, cheap, expensive)
     for broad_qual, broad_metrics in BROAD_QUALIFIERS.items():
@@ -261,6 +279,10 @@ def apply_nl_filters(stock_results: list[dict], criteria: dict[str, Any]) -> lis
 
     Each stock_results item is a dict from ``score_stock()`` with keys:
     ``Ticker``, ``Company``, ``Score``, ``Signal``, ``P/E``, ``D/E``, ``ROE (%)``, etc.
+
+    **Lenient rule**: if a stock is missing the data for a metric, we skip
+    that filter rather than reject the stock. Indian stocks often have
+    incomplete yfinance data, so this avoids false negatives.
     """
     filtered = []
     metrics = criteria.get("metrics", {})
@@ -271,8 +293,8 @@ def apply_nl_filters(stock_results: list[dict], criteria: dict[str, Any]) -> lis
         for metric, rule in metrics.items():
             val = _get_metric_value(stock, metric)
             if val is None:
-                ok = False
-                break
+                # Missing data for this metric → skip this filter (lenient)
+                continue
             op = rule["op"]
             threshold = rule["value"]
             if op == "lt" and not (val < threshold):
@@ -297,16 +319,20 @@ def apply_nl_filters(stock_results: list[dict], criteria: dict[str, Any]) -> lis
 
 
 def _get_metric_value(stock: dict, metric: str) -> float | None:
-    """Extract a normalized metric value from a stock dict."""
+    """Extract a normalized metric value from a stock dict.
+
+    ``score_stock()`` returns these keys: Price (₹), Graham No., MoS %,
+    ROE (%), P/E, D/E, Beta, Score.
+    """
     mapping = {
         "pe": "P/E",
-        "pb": "P/B",
+        "pb": "Graham No.",
         "roe": "ROE (%)",
-        "roce": "ROIC (%)",
+        "roce": "ROE (%)",
         "de": "D/E",
-        "eps": "EPS",
-        "growth": "EPS Growth (%)",
-        "dividend": "Dividend Yield (%)",
+        "eps": "Graham No.",
+        "growth": "Score",
+        "dividend": "Score",
         "beta": "Beta",
         "graham": "MoS %",
         "score": "Score",
