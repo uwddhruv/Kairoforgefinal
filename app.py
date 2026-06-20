@@ -151,6 +151,7 @@ with st.sidebar:
         "Navigation",
         ["📊  Screener", "📈  Stock Analysis"],
         label_visibility="collapsed",
+        key="page",
     )
 
     st.markdown("<hr style='border:1px solid rgba(59,130,246,0.1);margin:12px 0'>", unsafe_allow_html=True)
@@ -907,6 +908,9 @@ def _render_landing():
             nl_df[cols].rename(columns=display_cols),
             use_container_width=True,
             hide_index=True,
+            key="nl_table",
+            on_select="rerun",
+            selection_mode="single-row",
             column_config={
                 "SCORE": st.column_config.NumberColumn(format="%.1f"),
                 "P/E": st.column_config.NumberColumn(format="%.1f"),
@@ -917,6 +921,18 @@ def _render_landing():
                 "PRICE": st.column_config.NumberColumn(format="₹%.2f"),
             },
         )
+
+        # Handle row click → navigate to stock analysis
+        if st.session_state.get("nl_table"):
+            sel = st.session_state.nl_table.get("selection", {})
+            rows = sel.get("rows", [])
+            if rows:
+                idx = rows[0]
+                ticker = nl_df.iloc[idx]["Ticker"]
+                st.session_state.analysis_ticker = ticker
+                st.session_state.nl_table = None
+                st.session_state.page = "📈  Stock Analysis"
+                st.rerun()
 
         if st.button("Clear Search Results", type="tertiary"):
             del st.session_state.nl_results
