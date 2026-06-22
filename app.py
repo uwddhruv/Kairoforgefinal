@@ -1288,8 +1288,10 @@ def render_analysis():
     # If no DCF has been run yet, compute a default one for the report
     if _dcf_for_report is None and price is not None:
         _default_dcf = calculate_dcf(
-            fcf_ps=max(fcf_ps, 0.01),
-            g1=0.20, yr1=5, g2=0.10, yr2=5, gT=0.04,
+            fcf_per_share=max(fcf_ps, 0.01),
+            growth_stage1=0.20, years_stage1=5,
+            growth_stage2=0.10, years_stage2=5,
+            terminal_growth=0.04,
             wacc=wacc if wacc > 0.04 else 0.10,
         )
         _dcf_for_report = _default_dcf
