@@ -150,12 +150,18 @@ with st.sidebar:
     st.image("logo.png", width=240)
     st.markdown("<hr style='border:1px solid rgba(59,130,246,0.2);margin:12px 0'>", unsafe_allow_html=True)
 
+    if "nav_page" not in st.session_state:
+        st.session_state.nav_page = "📊  Screener"
+
     page = st.radio(
         "Navigation",
         ["📊  Screener", "📈  Stock Analysis"],
+        index=["📊  Screener", "📈  Stock Analysis"].index(
+            st.session_state.nav_page
+        ),
         label_visibility="collapsed",
-        key="page",
     )
+    st.session_state.nav_page = page
 
     st.markdown("<hr style='border:1px solid rgba(59,130,246,0.1);margin:12px 0'>", unsafe_allow_html=True)
     st.caption("Data: Yahoo Finance · yfinance")
@@ -931,7 +937,7 @@ def _render_landing():
             idx = selected["selection"]["rows"][0]
             ticker = nl_df.iloc[idx]["Ticker"]
             st.session_state.analysis_ticker = ticker
-            st.session_state.page = "📈  Stock Analysis"
+            st.session_state.nav_page = "📈  Stock Analysis"
             st.rerun()
 
         if st.button("Clear Search Results", type="tertiary"):
