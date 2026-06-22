@@ -4,6 +4,9 @@ modules = ["nodejs-24", "python-3.11"]
 router = "application"
 deploymentTarget = "autoscale"
 
+[deployment.run]
+args = ["bash", "run.sh"]
+
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
 env = { "CI" = "true" }
