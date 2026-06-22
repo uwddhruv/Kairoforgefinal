@@ -1,0 +1,30 @@
+kind = "data-app"
+previewPath = "/"
+title = "KAIROFORGE"
+version = "1.0.0"
+id = "artifacts/kairoforge"
+router = "path"
+
+[[integratedSkills]]
+name = "data-visualization"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 26067
+
+[services.development]
+run = "bash run.sh"
+
+[services.production]
+
+[services.production.run]
+args = [ "bash", "run.sh" ]
+
+[services.production.health.startup]
+path = "/"
+
+[services.env]
+PORT = "26067"
+BASE_PATH = "/"
