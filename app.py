@@ -9,6 +9,7 @@ Navigation (sidebar):
 
 import html as _html
 import math
+import re
 from pathlib import Path
 import pandas as pd
 import streamlit as st
@@ -18,7 +19,7 @@ from stocks           import STOCKS, SORTED_LABELS, INDUSTRY_PEERS, SECTOR_PEERS
 from data_loader      import fetch_stock_data, fetch_price_history, fetch_news, safe_get
 from valuation_models import (
     calculate_graham, calculate_ratios,
-    estimate_wacc, calculate_dcf, run_sensitivity,
+    estimate_wacc, calculate_dcf, calculate_dcf_scenarios, run_sensitivity,
 )
 from screener  import run_screener, generate_signal, score_stock as _score_stock
 from portfolio import screener_to_csv
@@ -298,10 +299,21 @@ def make_dcf_waterfall(result):
 
 def make_sensitivity_heatmap(df, current_price):
     z  = df.values.astype(float)
+    price_value = _finite_number(current_price)
+    price_label = (
+        f"₹{price_value:,.0f}"
+        if price_value is not None and price_value > 0
+        else "unavailable"
+    )
+    color_legend = (
+        "<span style='color:#22c55e'>Green = undervalued</span>"
+        if price_value is not None and price_value > 0
+        else "<span style='color:#22c55e'>Green = higher DCF value</span>"
+    )
     fig = go.Figure(go.Heatmap(
         z=z, x=list(df.columns), y=list(df.index),
         colorscale=[[0,"#7f1d1d"],[0.35,"#dc2626"],[0.5,"#1e3a5f"],[0.65,"#16a34a"],[1,"#166534"]],
-        zmid=current_price,
+        zmid=price_value if price_value is not None and price_value > 0 else None,
         text=[[f"₹{v:,.0f}" if not math.isnan(v) else "—" for v in row] for row in z],
         texttemplate="%{text}", textfont={"size": 11, "color": "#f1f5f9"},
         colorbar={"title": "Fair Value (₹)", "tickprefix": "₹", "tickformat": ",",
@@ -309,7 +321,7 @@ def make_sensitivity_heatmap(df, current_price):
     ))
     fig.update_layout(
         title=dict(
-            text=f"DCF Sensitivity  |  Current Price ₹{current_price:,.0f}  |  <span style='color:#22c55e'>Green = undervalued</span>",
+            text=f"DCF Sensitivity  |  Current Price {price_label}  |  {color_legend}",
             font={"size": 13}
         ),
         xaxis_title="Terminal Growth Rate", yaxis_title="WACC",
@@ -344,6 +356,9 @@ _POS_WORDS = {
     "milestone","robust","recovery","optimistic","advance","jumped","soared",
     "breakout","dividend","award","win","agreement","acquisition","launch",
     "delivered","exceeded","improved","raised","bullish","opportunity",
+    "profits","surges","stronger","beats","rises","gains","rallies","upgrades",
+    "expands","increases","boosts","jumps","soars","wins","awards","improves",
+    "exceeds","raises",
 }
 _NEG_WORDS = {
     "loss","decline","miss","weak","fall","drop","downgrade","underperform",
@@ -351,11 +366,24 @@ _NEG_WORDS = {
     "risk","debt","lawsuit","probe","investigation","fine","penalty","fraud",
     "crash","plunge","tumble","bearish","disappoint","challenge","struggle",
     "default","downside","volatile","uncertainty","slow","miss","halt",
+    "losses","declines","misses","falls","drops","downgrades","cuts","reduces",
+    "decreases","slumps","warnings","concerns","risks","lawsuits","probes",
+    "investigations","fines","penalties","crashes","plunges","tumbles",
+    "disappoints","challenges","struggles","defaults","halts",
 }
+
+def _finite_number(value):
+    """Return a finite float for numeric provider fields, or None."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
+
 
 def _score_headline(title: str) -> int:
     """Return +1 (positive), -1 (negative), or 0 (neutral) for a headline."""
-    words = set(title.lower().split())
+    words = set(re.findall(r"[a-z]+", title.casefold()))
     pos = len(words & _POS_WORDS)
     neg = len(words & _NEG_WORDS)
     if pos > neg:   return 1
@@ -372,10 +400,14 @@ def _time_ago(ts) -> str:
         if isinstance(ts, str):
             from datetime import datetime, timezone
             dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
             epoch = dt.timestamp()
         else:
             epoch = float(ts)
-        diff = int(_time.time() - epoch)
+            if epoch > 1_000_000_000_000:
+                epoch /= 1000
+        diff = max(0, int(_time.time() - epoch))
         if diff < 3600:   return f"{diff//60}m ago"
         if diff < 86400:  return f"{diff//3600}h ago"
         return f"{diff//86400}d ago"
@@ -1244,6 +1276,11 @@ def render_analysis():
         return
 
     TICKER = st.session_state.analysis_ticker
+    prior_dcf_params = st.session_state.get("_dcf_params")
+    if not isinstance(prior_dcf_params, dict) or prior_dcf_params.get("ticker") != TICKER:
+        st.session_state.pop("_dcf_res", None)
+        st.session_state.pop("_dcf_params", None)
+
     with st.spinner("Fetching fundamentals…"):
         info = fetch_stock_data(TICKER)
         hist = fetch_price_history(TICKER)
@@ -1252,22 +1289,41 @@ def render_analysis():
         st.error(f"No data returned for **{TICKER}**. Check the ticker format (e.g. RELIANCE.NS).")
         return
 
-    price      = safe_get(info, "currentPrice") or safe_get(info, "regularMarketPrice")
-    eps        = safe_get(info, "trailingEps")
-    bvps       = safe_get(info, "bookValue")
+    currency = str(safe_get(info, "currency", "") or "").strip().upper()
+    if currency != "INR":
+        st.error(
+            f"Yahoo Finance reports the quote currency as "
+            f"**{currency or 'unknown'}** for {TICKER}. "
+            "This India-focused analysis displays INR values and will not "
+            "calculate valuations from a different or unverified currency."
+        )
+        return
+
+    price_candidates = [
+        _finite_number(safe_get(info, "currentPrice")),
+        _finite_number(safe_get(info, "regularMarketPrice")),
+    ]
+    price      = next((value for value in price_candidates if value is not None and value > 0), None)
+    eps        = _finite_number(safe_get(info, "trailingEps"))
+    bvps       = _finite_number(safe_get(info, "bookValue"))
     name       = safe_get(info, "longName", TICKER)
     sector     = safe_get(info, "sector", "")
     industry   = safe_get(info, "industry", "")
-    mkt_cap    = safe_get(info, "marketCap")
-    shares_out = safe_get(info, "sharesOutstanding")
-    fcf_total  = safe_get(info, "freeCashflow")
-    beta       = safe_get(info, "beta", 1.0) or 1.0
+    mkt_cap    = _finite_number(safe_get(info, "marketCap"))
+    shares_out = _finite_number(safe_get(info, "sharesOutstanding"))
+    fcf_total  = _finite_number(safe_get(info, "freeCashflow"))
+    beta_value = _finite_number(safe_get(info, "beta", 1.0))
+    beta       = max(0.5, min(beta_value if beta_value is not None else 1.0, 2.5))
 
-    # EPS / FCF fallbacks (same logic as screener)
-    net_inc = safe_get(info, "netIncomeToCommon")
-    if eps is None and net_inc and shares_out and shares_out > 0:
+    # EPS may be reconstructed from net income, but it is never a cash-flow proxy.
+    net_inc = _finite_number(safe_get(info, "netIncomeToCommon"))
+    if eps is None and net_inc is not None and shares_out is not None and shares_out > 0:
         eps = net_inc / shares_out
-    fcf_ps = (fcf_total / shares_out) if (fcf_total and shares_out and shares_out > 0) else (eps or 1.0)
+    fcf_ps = (
+        fcf_total / shares_out
+        if fcf_total is not None and shares_out is not None and shares_out > 0
+        else None
+    )
 
     graham = calculate_graham(eps, bvps)
     ratios = calculate_ratios(info)
@@ -1285,12 +1341,20 @@ def render_analysis():
               q_signal, q_emoji, q_score, q_expl)
 
     # Export report button — always visible once a stock is loaded
-    _dcf_for_report = st.session_state.get("_dcf_res")
     _dcf_params = st.session_state.get("_dcf_params")
-    # If no DCF has been run yet, compute a default one for the report
-    if _dcf_for_report is None and price is not None:
+    _dcf_for_report = (
+        st.session_state.get("_dcf_res")
+        if (
+            fcf_ps is not None and fcf_ps > 0
+            and isinstance(_dcf_params, dict)
+            and _dcf_params.get("ticker") == TICKER
+        )
+        else None
+    )
+    # If there is no current-ticker DCF yet, use reported positive FCF only.
+    if _dcf_for_report is None and fcf_ps is not None and fcf_ps > 0:
         _default_dcf = calculate_dcf(
-            fcf_per_share=max(fcf_ps, 0.01),
+            fcf_per_share=fcf_ps,
             growth_stage1=0.20, years_stage1=5,
             growth_stage2=0.10, years_stage2=5,
             terminal_growth=0.04,
@@ -1439,52 +1503,109 @@ def render_analysis():
         st.markdown("#### 3-Stage DCF Valuation")
         st.caption("Discounted Cash Flow — estimates intrinsic value by projecting future cash flows and discounting them back to today.")
 
-        if fcf_ps and fcf_ps > 0:
+        fcf_ps_is_valid = (
+            fcf_ps is not None
+            and math.isfinite(fcf_ps)
+            and fcf_ps > 0
+        )
+        if fcf_ps_is_valid:
             st.markdown(f"Using Free Cash Flow per share: **₹{fcf_ps:.2f}**")
         else:
             if fcf_ps is not None and fcf_ps < 0:
                 st.warning(
                     f"Free Cash Flow per share is negative (₹{fcf_ps:.2f}). "
-                    "DCF requires positive FCF — falling back to EPS or ₹1. "
-                    "Adjust the Base FCF/Share slider below to a realistic estimate."
+                    "A positive FCF base is required; EPS is not a cash-flow substitute. "
+                    "DCF-derived sensitivity and price targets are withheld."
                 )
-            if eps and eps > 0:
-                fcf_ps = eps
-                st.info(f"Using EPS (₹{eps:.2f}) as FCF proxy.")
             else:
-                fcf_ps = 1.0
-                st.warning("No FCF or EPS data. Defaulting to ₹1 — please adjust.")
+                st.warning(
+                    "Yahoo Finance did not provide positive FCF per share for this stock. "
+                    "No EPS or placeholder value will be substituted, so DCF-derived "
+                    "sensitivity and price targets are withheld."
+                )
 
         d1, d2, d3 = st.columns(3)
+        ticker_key = re.sub(r"[^A-Za-z0-9_]", "_", TICKER)
         with d1:
             st.markdown("**Stage 1 — High Growth**")
-            fcf_in = st.number_input("Base FCF/Share (₹)", 0.01, 50000.0,
-                                      float(round(max(fcf_ps,0.01),2)), 1.0)
-            g1p = st.slider("Growth rate %", 0, 50, 20, key="g1p")
-            yr1 = st.slider("Years",         1, 10, 5,  key="yr1")
+            if fcf_ps_is_valid:
+                fcf_in = st.number_input(
+                    "Base FCF/Share (₹)", 0.0, 1_000_000_000.0,
+                    float(fcf_ps), 0.01,
+                    format="%.8f",
+                    key=f"fcf_input_{ticker_key}",
+                )
+            else:
+                fcf_in = None
+                st.caption("Unavailable until Yahoo Finance reports positive FCF/share.")
+            g1p = st.slider(
+                "Growth rate %", 0, 50, 20, key=f"g1p_{ticker_key}"
+            )
+            yr1 = st.slider(
+                "Years", 1, 10, 5, key=f"yr1_{ticker_key}"
+            )
         with d2:
             st.markdown("**Stage 2 — Transition**")
-            g2p = st.slider("Ending growth %", 0, 20, 10, key="g2p")
-            yr2 = st.slider("Years",            1, 10, 5,  key="yr2")
-            gTp = st.slider("Terminal growth %",1, 10, 4,  key="gTp")
+            g2_max = min(20, g1p)
+            g2_key = f"g2p_{ticker_key}"
+            if g2_max == 0:
+                st.session_state[g2_key] = 0
+                g2p = 0
+                st.caption("Ending growth is fixed at 0% because Stage 1 is 0%.")
+            else:
+                if st.session_state.get(g2_key, min(10, g2_max)) > g2_max:
+                    st.session_state[g2_key] = g2_max
+                g2p = st.slider(
+                    "Ending growth %", 0, g2_max, min(10, g2_max), key=g2_key
+                )
+            yr2 = st.slider(
+                "Years", 1, 10, 5, key=f"yr2_{ticker_key}"
+            )
+            gT_max = min(10, g2p)
+            gT_key = f"gTp_{ticker_key}"
+            if gT_max == 0:
+                st.session_state[gT_key] = 0
+                gTp = 0
+                st.caption("Terminal growth is fixed at 0% because Stage 2 is 0%.")
+            else:
+                if st.session_state.get(gT_key, min(4, gT_max)) > gT_max:
+                    st.session_state[gT_key] = gT_max
+                gTp = st.slider(
+                    "Terminal growth %", 0, gT_max, min(4, gT_max), key=gT_key
+                )
         with d3:
             st.markdown("**Discount Rate (WACC)**")
-            wp  = st.slider("WACC %", 5, 25, min(25, max(5, int(round(wacc*100)))), key="wp",
-                             help=f"Auto-estimated: {wacc*100:.1f}% using CAPM (β={beta:.2f})")
+            wp = st.slider(
+                "WACC %", 5, 25,
+                min(25, max(5, int(round(wacc * 100)))),
+                key=f"wp_{ticker_key}",
+                help=f"Auto-estimated: {wacc*100:.1f}% using CAPM (β={beta:.2f})",
+            )
             st.markdown(f"""
 <div class="glass-card" style="padding:12px 16px;font-size:.82rem">
   <div style="color:#64748b">Auto WACC: <strong style="color:#93c5fd">{wacc*100:.1f}%</strong></div>
   <div style="color:#334155;margin-top:4px">Rf=7.2% · ERP=7% · β={beta:.2f}</div>
 </div>""", unsafe_allow_html=True)
 
-        g1, g2, gT, w = g1p/100, g2p/100, gTp/100, wp/100
-        res = calculate_dcf(fcf_in, g1, yr1, g2, yr2, gT, w)
-        st.session_state["_dcf_res"]    = res
-        st.session_state["_dcf_params"] = dict(fcf_in=fcf_in, g1=g1, yr1=yr1, g2=g2,
-                                                yr2=yr2, gT=gT, wp=wp, price=price)
+        g1, g2, gT, w = g1p / 100, g2p / 100, gTp / 100, wp / 100
+        res = calculate_dcf(fcf_in, g1, yr1, g2, yr2, gT, w) if fcf_in is not None else {}
+        st.session_state["_dcf_res"] = res if fcf_in is not None else None
+        st.session_state["_dcf_params"] = (
+            dict(
+                ticker=TICKER, fcf_in=fcf_in, g1=g1, yr1=yr1, g2=g2,
+                yr2=yr2, gT=gT, wp=wp, price=price,
+            )
+            if fcf_in is not None
+            else None
+        )
 
-        if not res:
-            st.error("WACC must be higher than the terminal growth rate.")
+        if fcf_in is None:
+            st.info("DCF, sensitivity, and price targets need verified positive FCF/share data.")
+        elif not res:
+            st.error(
+                "DCF assumptions are invalid. Keep growth declining from Stage 1 "
+                "to Stage 2 to terminal, and keep WACC above terminal growth."
+            )
         elif price is None:
             st.warning("Current price unavailable — cannot compute discount to intrinsic value.")
         else:
@@ -1528,15 +1649,25 @@ def render_analysis():
 
         _dcf = st.session_state.get("_dcf_res")
         _prm = st.session_state.get("_dcf_params")
-        if _dcf is None or _prm is None:
+        if (
+            _dcf is None or _prm is None
+            or not isinstance(_prm, dict)
+            or _prm.get("ticker") != TICKER
+        ):
             st.info("Open the **3-Stage DCF** tab first to compute a valuation, then return here.")
         elif not _dcf:
-            st.warning("DCF returned no result — check WACC vs terminal growth.")
+            st.warning("DCF returned no result — verify the FCF and growth assumptions.")
         else:
             _w   = _prm["wp"] / 100
-            w_range = sorted({round(_w + (i-3)*0.01, 3) for i in range(7)
-                               if 0.05 <= round(_w+(i-3)*0.01,3) <= 0.25})
-            g_range = [round(0.02 + i*0.01, 2) for i in range(6)]
+            w_range = sorted({
+                round(min(0.50, max(0.01, _w + offset)), 3)
+                for offset in (-0.03, -0.02, -0.01, 0, 0.01, 0.02, 0.03)
+            })
+            g_cap = min(0.10, _prm["g2"])
+            g_range = sorted({
+                round(min(g_cap, max(0.0, _prm["gT"] + offset)), 3)
+                for offset in (-0.02, -0.01, 0, 0.01, 0.02)
+            })
 
             with st.spinner("Computing sensitivity grid…"):
                 sdf = run_sensitivity(
@@ -1561,36 +1692,34 @@ def render_analysis():
         _dcf_res = st.session_state.get("_dcf_res")
         _dcf_prm = st.session_state.get("_dcf_params")
 
-        if _dcf_res is None or _dcf_prm is None:
+        if (
+            _dcf_res is None or _dcf_prm is None
+            or not isinstance(_dcf_prm, dict)
+            or _dcf_prm.get("ticker") != TICKER
+        ):
             st.info("Open the **3-Stage DCF** tab first, click **Compute DCF Valuation**, then return here.")
         elif not _dcf_res:
             st.warning("DCF returned no result. Check WACC vs terminal growth.")
         else:
-            base_iv = _dcf_res.get("intrinsic_value", 0)
             _fcf_in = _dcf_prm.get("fcf_in", 0)
             _g1 = _dcf_prm.get("g1", 0)
             _yr1 = _dcf_prm.get("yr1", 0)
             _g2 = _dcf_prm.get("g2", 0)
             _yr2 = _dcf_prm.get("yr2", 0)
-            _gT = _dcf_prm.get("gT", 0.035)   # actual terminal growth used in base DCF
+            _gT = _dcf_prm.get("gT", 0)
             _wp = _dcf_prm.get("wp", 0)
             _base_w = _wp / 100
 
-            # Bull case: lower WACC + higher terminal growth
-            bull_g = min(0.045, _gT + 0.02)
-            bull_w = max(0.07, _base_w - 0.02)
-            bull_res = calculate_dcf(_fcf_in, _g1, _yr1, _g2, _yr2, bull_g, bull_w)
-            bull_iv = bull_res.get("intrinsic_value", base_iv)
-
-            # Bear case: higher WACC + lower terminal growth
-            bear_g = max(0.01, _gT - 0.02)
-            bear_w = min(0.18, _base_w + 0.02)
-            bear_res = calculate_dcf(_fcf_in, _g1, _yr1, _g2, _yr2, bear_g, bear_w)
-            bear_iv = bear_res.get("intrinsic_value", base_iv)
-
-            # Ensure ordering: bear ≤ base ≤ bull
-            bear_iv = min(bear_iv, base_iv)
-            bull_iv = max(bull_iv, base_iv)
+            scenarios = calculate_dcf_scenarios(
+                _fcf_in, _g1, _yr1, _g2, _yr2, _gT, _base_w
+            )
+            base_iv = scenarios["base"]["result"]["intrinsic_value"]
+            bull_iv = scenarios["bull"]["result"]["intrinsic_value"]
+            bear_iv = scenarios["bear"]["result"]["intrinsic_value"]
+            bull_w = scenarios["bull"]["wacc"]
+            bull_g = scenarios["bull"]["terminal_growth"]
+            bear_w = scenarios["bear"]["wacc"]
+            bear_g = scenarios["bear"]["terminal_growth"]
             _price = _dcf_prm.get("price", 0)
 
             # ── KPI tiles ──
@@ -1599,7 +1728,7 @@ def render_analysis():
                 b_dn = (bear_iv - _price) / _price * 100
                 b_up_c = "#22c55e" if b_up > 0 else "#ef4444"
                 b_dn_c = "#22c55e" if b_dn > 0 else "#ef4444"
-                bull_lbl = f"🟢 ₹{bull_iv:,.0f} (+{b_up:.1f}% vs price)"
+                bull_lbl = f"🟢 ₹{bull_iv:,.0f} ({b_up:+.1f}% vs price)"
                 bear_lbl = f"🔴 ₹{bear_iv:,.0f} ({b_dn:+.1f}% vs price)"
                 base_lbl = f"⚪ ₹{base_iv:,.0f}"
                 target_val = f"{((bull_iv + bear_iv) / 2 / _price - 1) * 100:+.1f}%"

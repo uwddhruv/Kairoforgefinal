@@ -70,22 +70,49 @@ def fetch_news(ticker: str) -> list[dict]:
     """
     try:
         raw = yf.Ticker(ticker).news or []
+        if not isinstance(raw, (list, tuple)):
+            return []
+
         out = []
-        for item in raw:
-            # yfinance may return content nested under a 'content' key
-            if isinstance(item, dict) and "content" in item:
-                item = item["content"]
-            title = (item.get("title") or "").strip()
+        seen_titles = set()
+        for raw_item in raw:
+            if not isinstance(raw_item, dict):
+                continue
+            # yfinance may return content nested under a 'content' key.
+            item = raw_item.get("content", raw_item)
+            if not isinstance(item, dict):
+                continue
+            raw_title = item.get("title")
+            title = raw_title.strip() if isinstance(raw_title, str) else ""
             if not title:
                 continue
+
+            normalized_title = " ".join(
+                "".join(
+                    char if char.isalnum() else " "
+                    for char in title.casefold()
+                ).split()
+            )
+            if normalized_title in seen_titles:
+                continue
+            seen_titles.add(normalized_title)
+
+            provider = item.get("provider")
+            provider_name = (
+                provider.get("displayName", "")
+                if isinstance(provider, dict)
+                else item.get("publisher", "")
+            )
+            canonical_url = item.get("canonicalUrl")
+            link = (
+                canonical_url.get("url", "")
+                if isinstance(canonical_url, dict)
+                else item.get("link", "")
+            )
             out.append({
                 "title":     title,
-                "publisher": item.get("provider", {}).get("displayName", "")
-                             if isinstance(item.get("provider"), dict)
-                             else item.get("publisher", ""),
-                "link":      item.get("canonicalUrl", {}).get("url", "")
-                             if isinstance(item.get("canonicalUrl"), dict)
-                             else item.get("link", ""),
+                "publisher": provider_name if isinstance(provider_name, str) else "",
+                "link":      link if isinstance(link, str) else "",
                 "time":      item.get("pubDate") or item.get("providerPublishTime"),
             })
         return out

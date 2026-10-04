@@ -157,11 +157,12 @@ def estimate_wacc(info: dict) -> float:
         WACC as a decimal (e.g. 0.12 = 12 %).
     """
     RF, ERP, TAX = 0.072, 0.070, 0.25
-    beta       = max(0.5, min(safe_get(info, "beta", 1.0) or 1.0, 2.5))
+    beta_value = _finite_float(safe_get(info, "beta", 1.0))
+    beta       = max(0.5, min(beta_value if beta_value is not None else 1.0, 2.5))
     ke         = RF + beta * ERP
     kd         = 0.08 * (1 - TAX)
-    market_cap = safe_get(info, "marketCap") or 0
-    total_debt = safe_get(info, "totalDebt", 0) or 0
+    market_cap = max(0.0, _finite_float(safe_get(info, "marketCap")) or 0.0)
+    total_debt = max(0.0, _finite_float(safe_get(info, "totalDebt")) or 0.0)
 
     if market_cap > 0:
         V    = market_cap + total_debt
@@ -170,6 +171,15 @@ def estimate_wacc(info: dict) -> float:
         wacc = ke
 
     return round(wacc, 4)
+
+
+def _finite_float(value) -> float | None:
+    """Convert numeric provider values safely, rejecting missing/non-finite data."""
+    try:
+        result = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return result if math.isfinite(result) else None
 
 
 # ─────────────────────────────────────────────────────────────
@@ -188,8 +198,9 @@ def calculate_dcf(
     """Three-stage Discounted Cash Flow valuation per share.
 
     Stage 1 — High Growth   : FCF grows at ``growth_stage1`` for ``years_stage1`` yrs.
-    Stage 2 — Transition    : Growth declines linearly to ``terminal_growth``.
+    Stage 2 — Transition    : Growth declines linearly to ``growth_stage2``.
     Stage 3 — Terminal Value: Gordon Growth Model perpetuity.
+    The assumptions must decline in order: stage 1 ≥ stage 2 ≥ terminal.
 
     Parameters
     ----------
@@ -205,9 +216,37 @@ def calculate_dcf(
     -------
     dict  Keys: intrinsic_value, pv_stage1, pv_stage2, pv_terminal,
                 terminal_value, stage_cashflows.
-          Empty dict if WACC ≤ terminal_growth.
+          Empty dict if inputs are invalid, growth assumptions increase between
+          stages, or WACC is not greater than terminal growth.
     """
-    if wacc <= terminal_growth or fcf_per_share <= 0:
+    values = [
+        _finite_float(fcf_per_share),
+        _finite_float(growth_stage1),
+        _finite_float(growth_stage2),
+        _finite_float(terminal_growth),
+        _finite_float(wacc),
+    ]
+    if any(value is None for value in values):
+        return {}
+
+    fcf_per_share, growth_stage1, growth_stage2, terminal_growth, wacc = values
+    years1 = _finite_float(years_stage1)
+    years2 = _finite_float(years_stage2)
+    if (
+        years1 is None or years2 is None
+        or not years1.is_integer() or not years2.is_integer()
+        or years1 < 1 or years2 < 1
+    ):
+        return {}
+    years_stage1, years_stage2 = int(years1), int(years2)
+
+    if (
+        fcf_per_share <= 0
+        or wacc <= terminal_growth
+        or min(growth_stage1, growth_stage2, terminal_growth, wacc) <= -1
+        or growth_stage1 < growth_stage2
+        or growth_stage2 < terminal_growth
+    ):
         return {}
 
     cashflows, fcf = [], fcf_per_share
@@ -243,6 +282,58 @@ def calculate_dcf(
         "pv_terminal":     round(pv_tv, 2),
         "terminal_value":  round(tv, 2),
         "stage_cashflows": cashflows,
+    }
+
+
+def calculate_dcf_scenarios(
+    fcf_per_share: float,
+    growth_stage1: float,
+    years_stage1: int,
+    growth_stage2: float,
+    years_stage2: int,
+    terminal_growth: float,
+    wacc: float,
+) -> dict:
+    """Return internally consistent bear/base/bull DCF cases and assumptions.
+
+    The bull case raises terminal growth only within both the stage-2 and WACC
+    headroom, then lowers WACC without crossing terminal growth. The bear case
+    lowers terminal growth and raises WACC. No market-wide rate clamps are used.
+    """
+    base = calculate_dcf(
+        fcf_per_share, growth_stage1, years_stage1, growth_stage2,
+        years_stage2, terminal_growth, wacc,
+    )
+    if not base:
+        return {}
+
+    terminal_growth = float(terminal_growth)
+    wacc = float(wacc)
+    growth_stage2 = float(growth_stage2)
+    bull_growth_room = max(
+        0.0,
+        min(growth_stage2 - terminal_growth, wacc - terminal_growth),
+    )
+    bull_growth = terminal_growth + min(0.02, bull_growth_room / 2)
+    bull_wacc = wacc - min(0.02, (wacc - bull_growth) / 2)
+    bear_growth = max(0.0, terminal_growth - 0.02)
+    bear_wacc = wacc + 0.02
+
+    bull = calculate_dcf(
+        fcf_per_share, growth_stage1, years_stage1, growth_stage2,
+        years_stage2, bull_growth, bull_wacc,
+    )
+    bear = calculate_dcf(
+        fcf_per_share, growth_stage1, years_stage1, growth_stage2,
+        years_stage2, bear_growth, bear_wacc,
+    )
+    if not bull or not bear:
+        return {}
+
+    return {
+        "base": {"result": base, "wacc": wacc, "terminal_growth": terminal_growth},
+        "bull": {"result": bull, "wacc": bull_wacc, "terminal_growth": bull_growth},
+        "bear": {"result": bear, "wacc": bear_wacc, "terminal_growth": bear_growth},
     }
 
 
