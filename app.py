@@ -16,7 +16,9 @@ import streamlit as st
 import plotly.graph_objects as go
 
 from stocks           import STOCKS, SORTED_LABELS, INDUSTRY_PEERS, SECTOR_PEERS, TICKER_TO_NAME
-from data_loader      import fetch_stock_data, fetch_price_history, fetch_news, safe_get
+from data_loader      import (
+    fetch_stock_data, fetch_statement_metrics, fetch_price_history, fetch_news, safe_get,
+)
 from valuation_models import (
     calculate_graham, calculate_ratios,
     estimate_wacc, calculate_dcf, calculate_dcf_scenarios, run_sensitivity,
@@ -1311,7 +1313,39 @@ def render_analysis():
     industry   = safe_get(info, "industry", "")
     mkt_cap    = _finite_number(safe_get(info, "marketCap"))
     shares_out = _finite_number(safe_get(info, "sharesOutstanding"))
+    shares_source = "Yahoo Finance summary" if shares_out is not None and shares_out > 0 else ""
+    shares_period = ""
+    if shares_out is None or shares_out <= 0:
+        implied_shares = _finite_number(safe_get(info, "impliedSharesOutstanding"))
+        if implied_shares is not None and implied_shares > 0:
+            shares_out = implied_shares
+            shares_source = "Yahoo implied share count"
+
     fcf_total  = _finite_number(safe_get(info, "freeCashflow"))
+    fcf_source = "Yahoo Finance summary (TTM)" if fcf_total is not None else ""
+    fcf_period = "TTM" if fcf_total is not None else ""
+    statement_metrics = {}
+    if fcf_total is None or fcf_total == 0 or shares_out is None or shares_out <= 0:
+        with st.spinner("Checking Yahoo Finance statements for FCF and total shares…"):
+            statement_metrics = fetch_statement_metrics(TICKER)
+    if fcf_total is None or fcf_total == 0:
+        statement_fcf = _finite_number(statement_metrics.get("value"))
+        if statement_fcf is not None:
+            fcf_total = statement_fcf
+            fcf_source = statement_metrics.get(
+                "source", "Yahoo annual cash-flow statement"
+            )
+            fcf_period = statement_metrics.get("period", "")
+    if shares_out is None or shares_out <= 0:
+        statement_shares = _finite_number(
+            statement_metrics.get("shares_outstanding")
+        )
+        if statement_shares is not None and statement_shares > 0:
+            shares_out = statement_shares
+            shares_source = statement_metrics.get(
+                "shares_source", "Yahoo reported share count"
+            )
+            shares_period = statement_metrics.get("shares_period", "")
     beta_value = _finite_number(safe_get(info, "beta", 1.0))
     beta       = max(0.5, min(beta_value if beta_value is not None else 1.0, 2.5))
 
@@ -1510,6 +1544,15 @@ def render_analysis():
         )
         if fcf_ps_is_valid:
             st.markdown(f"Using Free Cash Flow per share: **₹{fcf_ps:.2f}**")
+            st.caption(
+                f"Source: {fcf_source or 'Yahoo Finance'}"
+                + (f" · Period: {fcf_period}" if fcf_period else "")
+                + (
+                    f" · Shares: {shares_source}"
+                    + (f" ({shares_period})" if shares_period else "")
+                    if shares_source else ""
+                )
+            )
         else:
             if fcf_ps is not None and fcf_ps < 0:
                 st.warning(
@@ -1519,8 +1562,9 @@ def render_analysis():
                 )
             else:
                 st.warning(
-                    "Yahoo Finance did not provide positive FCF per share for this stock. "
-                    "No EPS or placeholder value will be substituted, so DCF-derived "
+                    "Could not verify positive FCF per share because Yahoo Finance "
+                    "is missing FCF or total-share data for this stock. No EPS or "
+                    "placeholder value will be substituted, so DCF-derived "
                     "sensitivity and price targets are withheld."
                 )
 
@@ -1537,7 +1581,10 @@ def render_analysis():
                 )
             else:
                 fcf_in = None
-                st.caption("Unavailable until Yahoo Finance reports positive FCF/share.")
+                st.caption(
+                    "Unavailable until Yahoo Finance provides positive FCF/share "
+                    "or usable cash-flow statement data."
+                )
             g1p = st.slider(
                 "Growth rate %", 0, 50, 20, key=f"g1p_{ticker_key}"
             )

@@ -53,6 +53,149 @@ def fetch_stock_data(ticker: str) -> dict:
         return {}
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_statement_metrics(ticker: str) -> dict:
+    """Fetch missing annual FCF and total-share-count values from Yahoo statements.
+
+    Yahoo often omits ``freeCashflow`` from ``.info`` for NSE tickers while
+    providing it on the annual cash-flow statement. If the statement has no
+    FCF row, compute it only when both operating cash flow and capital
+    expenditure are present for the same reporting period. Total shares fall
+    back to reported shares outstanding in the balance sheet or Yahoo's share
+    history; free-float shares are deliberately not used.
+    """
+    try:
+        provider = yf.Ticker(ticker)
+    except Exception:
+        return {}
+    try:
+        frame = provider.cashflow
+    except Exception:
+        frame = pd.DataFrame()
+    try:
+        balance_sheet = provider.balance_sheet
+    except Exception:
+        balance_sheet = pd.DataFrame()
+
+    def normalize(label) -> str:
+        return "".join(char.lower() for char in str(label) if char.isalnum())
+
+    def period_value(value):
+        try:
+            timestamp = pd.Timestamp(value)
+            return -1 if pd.isna(timestamp) else timestamp.value
+        except (TypeError, ValueError, OverflowError):
+            return -1
+
+    def period_label(value):
+        try:
+            timestamp = pd.Timestamp(value)
+            return str(value) if pd.isna(timestamp) else timestamp.date().isoformat()
+        except (TypeError, ValueError, OverflowError):
+            return str(value)
+
+    def ordered_columns(statement):
+        if not isinstance(statement, pd.DataFrame) or statement.empty:
+            return []
+        return sorted(statement.columns, key=period_value, reverse=True)
+
+    def statement_value(statement, row, column):
+        if row is None:
+            return None
+        try:
+            value = float(statement.loc[row, column])
+        except (TypeError, ValueError, OverflowError, KeyError):
+            return None
+        return value if math.isfinite(value) else None
+
+    result = {}
+
+    if isinstance(frame, pd.DataFrame) and not frame.empty:
+        row_lookup = {normalize(label): label for label in frame.index}
+        fcf_row = row_lookup.get("freecashflow")
+        operating_row = row_lookup.get("operatingcashflow")
+        capex_row = (
+            row_lookup.get("capitalexpenditurereported")
+            or row_lookup.get("capitalexpenditure")
+            or row_lookup.get("capitalexpenditures")
+        )
+        columns = ordered_columns(frame)
+
+        if fcf_row is not None:
+            for column in columns:
+                value = statement_value(frame, fcf_row, column)
+                if value is not None:
+                    result.update(
+                        value=value,
+                        period=period_label(column),
+                        source="Yahoo annual cash-flow statement",
+                    )
+                    break
+
+        # CapEx is a cash outflow; subtract its absolute value regardless of
+        # the sign convention Yahoo uses in the source statement.
+        if "value" not in result and operating_row is not None and capex_row is not None:
+            for column in columns:
+                operating_cash = statement_value(frame, operating_row, column)
+                capital_spend = statement_value(frame, capex_row, column)
+                if operating_cash is not None and capital_spend is not None:
+                    result.update(
+                        value=operating_cash - abs(capital_spend),
+                        period=period_label(column),
+                        source="Calculated from operating cash flow less capital expenditure",
+                    )
+                    break
+
+    # Prefer the newest dated reported total-share count. Never use floatShares:
+    # it is only the tradable float and would inflate per-share cash flow.
+    share_candidates = []
+    if isinstance(balance_sheet, pd.DataFrame) and not balance_sheet.empty:
+        balance_rows = {normalize(label): label for label in balance_sheet.index}
+        share_row = (
+            balance_rows.get("ordinarysharesnumber")
+            or balance_rows.get("shareissued")
+        )
+        for column in ordered_columns(balance_sheet):
+            shares = statement_value(balance_sheet, share_row, column)
+            if shares is not None and shares > 0:
+                share_candidates.append((
+                    period_value(column), shares, period_label(column),
+                    "Yahoo balance sheet",
+                ))
+                break
+
+    try:
+        share_history = provider.get_shares_full()
+    except Exception:
+        share_history = None
+    if isinstance(share_history, pd.Series) and not share_history.empty:
+        for date, raw_shares in sorted(
+            share_history.items(), key=lambda item: period_value(item[0]), reverse=True
+        ):
+            try:
+                shares = float(raw_shares)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if math.isfinite(shares) and shares > 0:
+                share_candidates.append((
+                    period_value(date), shares, period_label(date),
+                    "Yahoo share history",
+                ))
+                break
+
+    if share_candidates:
+        _, shares, share_period, share_source = max(
+            share_candidates, key=lambda item: item[0]
+        )
+        result.update(
+            shares_outstanding=shares,
+            shares_period=share_period,
+            shares_source=share_source,
+        )
+
+    return result
+
+
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_news(ticker: str) -> list[dict]:
     """Fetch recent news articles for a ticker via yfinance.
