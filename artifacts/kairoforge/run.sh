@@ -1,14 +1,19 @@
-#!/bin/bash
-# Read the first Replit public domain from the REPLIT_DOMAINS environment variable.
-# This tells Streamlit's client JavaScript the correct public address for WebSocket.
-DOMAIN=$(echo "$REPLIT_DOMAINS" | cut -d',' -f1)
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Run Streamlit with the public domain so WebSocket connections work through Replit's proxy.
-streamlit run /home/runner/workspace/app.py \
-  --server.port 26067 \
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+PORT="${PORT:-26067}"
+DOMAIN="${REPLIT_DOMAINS:-localhost}"
+DOMAIN="${DOMAIN%%,*}"
+
+cd "$WORKSPACE_ROOT"
+
+exec streamlit run "$WORKSPACE_ROOT/app.py" \
+  --server.port "$PORT" \
   --server.headless true \
   --server.enableCORS false \
   --server.enableXsrfProtection false \
   --browser.serverAddress "$DOMAIN" \
-  --browser.serverPort 26067 \
+  --browser.serverPort "$PORT" \
   --browser.gatherUsageStats false

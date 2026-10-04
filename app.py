@@ -9,6 +9,7 @@ Navigation (sidebar):
 
 import html as _html
 import math
+from pathlib import Path
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
@@ -147,7 +148,8 @@ if "nl_explanation"  not in st.session_state: st.session_state.nl_explanation  =
 # SIDEBAR — logo + navigation
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.image("logo.png", width=240)
+    logo_path = Path(__file__).resolve().parent / "logo.png"
+    st.image(str(logo_path), width=240)
     st.markdown("<hr style='border:1px solid rgba(59,130,246,0.2);margin:12px 0'>", unsafe_allow_html=True)
 
     if "nav_page" not in st.session_state:
